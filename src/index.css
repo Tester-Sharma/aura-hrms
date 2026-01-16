@@ -1,0 +1,119 @@
+:root {
+  --primary: #6200EA;
+  --primary-light: #B388FF;
+  --primary-dark: #311B92;
+  --action: #03DAC5;
+  --action-dark: #018786;
+  --danger: #FF5252;
+  --success: #00E676;
+  --warning: #FFD740;
+  --surface: #FFFFFF;
+  --background: #F8F9FE;
+  --text-main: #1A1A1B;
+  --text-muted: #64748B;
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --glass: rgba(255, 255, 255, 0.7);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+body {
+  background-color: #e0e0e0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+}
+
+.simulator-dead-zone {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: linear-gradient(135deg, #1a237e 0%, #000000 100%);
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.simulator-dead-zone.desktop-mode {
+  background: var(--background);
+}
+
+.simulator-live-zone {
+  width: 400px;
+  height: 850px;
+  background-color: var(--background);
+  border-radius: 40px;
+  box-shadow: var(--shadow-lg), 0 0 0 12px #222;
+  overflow-y: auto;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+  border: 4px solid #333;
+}
+
+.simulator-dead-zone.desktop-mode .simulator-live-zone {
+  width: 100%;
+  height: 100vh;
+  border-radius: 0;
+  box-shadow: none;
+  max-width: none;
+  margin: 0;
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  overflow: hidden;
+  border: none;
+}
+
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  background-color: var(--background);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom Scrollbar */
+.simulator-live-zone::-webkit-scrollbar {
+  width: 6px;
+}
+
+.simulator-live-zone::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.simulator-live-zone::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+
+/* Desktop UI Utilities */
+.desktop-only {
+  display: none;
+}
+
+.simulator-dead-zone.desktop-mode .desktop-only {
+  display: block;
+}
+
+.simulator-dead-zone.desktop-mode .mobile-only {
+  display: none;
+}
+
+.simulator-dead-zone.desktop-mode .dashboard-content,
+.simulator-dead-zone.desktop-mode .history-container,
+.simulator-dead-zone.desktop-mode .leave-container,
+.simulator-dead-zone.desktop-mode .profile-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+}

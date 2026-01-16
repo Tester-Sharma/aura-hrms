@@ -1,0 +1,229 @@
+=====================================================================PAYROLL & ATTENDANCE MANAGEMENT SYSTEM Prototype –
+Manufacturing & Industrial Use Case
+1. SYSTEM OVERVIEW
+This system is a Payroll and Attendance Management Prototype designed
+specifically for manufacturing factories and industrial environments, where
+hour-based work tracking is critical and both workers and salaried employees
+operate together.
+The system focuses on:
+Accurate attendance tracking
+Hour-based salary calculation
+Simple leave management
+Transparent salary visibility
+Payslip PDF generation
+The goal of this prototype is clarity, usability, and functional correctness,
+not enterprise-level complexity.
+2. USER ROLES
+2.1 Employee / Worker
+Views own profile, attendance, salary, and payslips
+Punches in and out
+Applies for leave
+Tracks worked hours and earnings
+2.2 HR (Administrator)
+Manages employees and workers
+Approves or rejects leave
+Monitors attendance
+Configures salary structures
+Generates payslips
+3. CORE DESIGN PHILOSOPHY
+Hour-based system first (critical for factories)
+Minimal UI & simple workflows
+Read-only salary visibility for employees
+Single source of truth: attendance
+Automation wherever possible
+Prototype-ready, demo-friendly
+4. EMPLOYEE / WORKER PORTAL – DETAILED FEATURES
+4.1 Profile & Employment Details
+Each employee or worker has a dedicated profile section containing:
+Personal Information:
+Name
+Employee ID
+Contact details
+Job Information:
+Designation
+Department
+Shift (start time, end time)
+Employment type:
+Worker (Hourly-based)
+Employee (Monthly-based)
+This section is view-only for employees/workers.
+4.2 Salary & Wage Information
+Salary visibility depends on employment type.
+For Employees (Monthly Salary):
+Complete CTC displayed
+Salary breakdown:
+Basic
+HRA
+PF
+Allowances (if applicable)
+Expected working hours for the month
+Salary is calculated proportionally based on attendance
+For Workers (Hourly Wage):
+Hourly wage rate
+Overtime (OT) rate (if enabled)
+Estimated monthly earnings based on worked hours
+Salary values are automatically calculated, not manually edited by employees.
+5. ATTENDANCE MANAGEMENT (CORE FEATURE)
+5.1 Punch In / Punch Out
+Employees and workers record attendance using:
+Punch In button
+Punch Out button
+System behavior:
+Prevents multiple punch-ins without punch-out
+Records timestamps
+Calculates daily worked hours automatically
+Calculates OT hours based on shift rules
+5.2 Attendance Summary Dashboard
+Displayed as simple cards:
+Total working days (monthly)
+Expected total working hours
+Actual worked hours
+Pending / deficit hours
+Overtime hours
+This allows workers to immediately understand:
+Whether they are underworking or overworking
+Impact on salary
+5.3 Attendance History Table
+Day-wise attendance log:
+Punch in time
+Punch out time
+Worked hours
+OT hours
+Attendance status:
+Present
+Leave
+Absent
+Includes:
+Month selector
+Current and past month viewing
+6. LEAVE MANAGEMENT WORKFLOW
+6.1 Leave Dashboard (Employee Side)
+Displayed as cards:
+Total leave entitlement
+Used leaves
+Remaining balance
+Leave application status
+6.2 Apply Leave
+Employees/workers can apply leave by providing:
+Leave type (Casual / Sick / Unpaid)
+Date range
+Reason
+Leave status is set to Pending initially.
+6.3 Leave Impact Rules
+Approved leave updates attendance automatically
+Paid/unpaid leave directly impacts salary
+Unpaid leave reduces payable salary based on hours
+7. HR PORTAL – DETAILED FEATURES
+7.1 Employee Management
+HR views all employees in card format:
+Employee ID
+Name
+Designation
+Department
+Shift
+Clicking View Details opens:
+Complete personal and job profile
+Salary structure
+Attendance summary
+Leave history
+7.2 Register New Employee / Worker
+HR can onboard new employees by entering:
+Personal Details:
+Name
+Contact info
+Job Details:
+Designation
+Department
+Shift timings
+Employment type (Worker / Employee)
+Salary Configuration:
+Hourly wage (for workers)
+Monthly CTC (for employees)
+Salary components selection:
+Basic
+HRA
+PF
+Allowances
+The system automatically calculates the salary breakup based on selected
+components.
+7.3 Leave Approval System
+HR sees all leave requests in a single view:
+Employee name
+Leave type
+Duration
+Reason
+Current status
+HR actions:
+Approve
+Reject
+System effects:
+Attendance updated
+Salary recalculated if needed
+7.4 Attendance Monitoring (HR View)
+HR can:
+View attendance summary cards per employee
+Drill down into month-wise detailed attendance
+See total hours, OT hours, absences
+Attendance editing is restricted in prototype to maintain data integrity.
+8. SALARY CALCULATION LOGIC (SYSTEM RULES)
+8.1 Worker Salary (Hourly-Based)
+Salary = (Worked Hours × Hourly Rate) + (OT Hours × OT Rate)
+No fixed monthly salary
+Attendance is the only salary driver
+8.2 Employee Salary (Monthly-Based)
+Payable Salary = (Actual Worked Hours / Expected Monthly Hours) × Monthly CTC
+Leave and absences affect worked hours
+Ensures fairness and transparency
+9. PAYSLIP PDF GENERATION (CORE FEATURE)
+9.1 Payslip Availability
+Payslip can be generated monthly
+Accessible by:
+HR (for any employee)
+Employee (own payslip only)
+9.2 Payslip Contents
+Each PDF payslip includes:
+Company details
+Employee details
+Month & year
+Attendance summary
+Worked hours & OT hours
+Salary breakdown
+Deductions (if any)
+Net payable salary
+9.3 Payslip Workflow
+System calculates salary based on attendance
+HR or employee clicks Generate Payslip
+PDF is generated dynamically
+Payslip can be:
+Downloaded
+Viewed
+Shared
+Payslip data is derived, not manually edited.
+10. SYSTEM WORKFLOW SUMMARY
+1. HR registers employee/worker
+2. Employee punches in/out daily
+3. Attendance auto-calculates hours
+4. Leaves are applied and approved
+5. Salary is calculated from attendance
+6. Payslip is generated as PDF
+7. Employee views earnings transparently
+8. PROTOTYPE SCOPE & INTENT
+Included:
+Attendance tracking
+Hour-based salary calculation
+Leave management
+Payslip PDF generation
+HR administration
+Excluded (Intentionally):
+Biometric devices
+Tax filing & compliance
+Multi-level approvals
+Enterprise analytics
+Bank integrations
+12. IDEAL USE CASE
+Small to mid-size factories
+Industrial workshops
+Manufacturing units
+Internal demos or proof-of-concept
+Client walkthroughs
+=====================================================================END OF README.
