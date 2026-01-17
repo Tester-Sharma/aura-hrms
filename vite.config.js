@@ -13,7 +13,7 @@ export default defineConfig({
     }
   },
   preview: {
-    allowedHosts: true,
+    allowedHosts: ['frontend-production-820b2.up.railway.app'],
     host: true
   }
 })
