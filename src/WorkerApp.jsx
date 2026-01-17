@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { Monitor, Smartphone } from 'lucide-react';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
@@ -15,7 +15,7 @@ function WorkerApp() {
     const handleLogin = (userData) => {
         // Filter: only allow workers or handle role gracefully
         if (userData.role === 'hr') {
-            alert("This is the Worker Portal. Please use the HR Portal at :5174");
+            alert("This is the Worker Portal. Please use the HR Portal at /hr");
             return;
         }
         setUser(userData);
@@ -33,34 +33,33 @@ function WorkerApp() {
             </button>
 
             <div className="simulator-live-zone">
-                <Router>
-                    <div className={isDesktopMode ? "main-content" : ""}>
-                        <Routes>
-                            <Route
-                                path="/login"
-                                element={user ? <Navigate to="/" /> : <Login onLoginSuccess={handleLogin} />}
-                            />
-                            <Route
-                                path="/"
-                                element={user ? <Dashboard user={user} isDesktop={isDesktopMode} /> : <Navigate to="/login" />}
-                            />
-                            <Route
-                                path="/history"
-                                element={user ? <AttendanceHistory isDesktop={isDesktopMode} /> : <Navigate to="/login" />}
-                            />
-                            <Route
-                                path="/leave"
-                                element={user ? <LeaveApplication isDesktop={isDesktopMode} /> : <Navigate to="/login" />}
-                            />
-                            <Route
-                                path="/profile"
-                                element={user ? <Profile user={user} onLogout={() => setUser(null)} isDesktop={isDesktopMode} /> : <Navigate to="/login" />}
-                            />
-                            <Route path="*" element={<Navigate to="/" />} />
-                        </Routes>
-                    </div>
-                    {user && <BottomNav isDesktop={isDesktopMode} />}
-                </Router>
+                {/* Note: Router is provided by App.jsx now */}
+                <div className={isDesktopMode ? "main-content" : ""}>
+                    <Routes>
+                        <Route
+                            path="/login"
+                            element={user ? <Navigate to="/" /> : <Login onLoginSuccess={handleLogin} />}
+                        />
+                        <Route
+                            path="/"
+                            element={user ? <Dashboard user={user} isDesktop={isDesktopMode} /> : <Navigate to="/login" />}
+                        />
+                        <Route
+                            path="/history"
+                            element={user ? <AttendanceHistory isDesktop={isDesktopMode} /> : <Navigate to="/login" />}
+                        />
+                        <Route
+                            path="/leave"
+                            element={user ? <LeaveApplication isDesktop={isDesktopMode} /> : <Navigate to="/login" />}
+                        />
+                        <Route
+                            path="/profile"
+                            element={user ? <Profile user={user} onLogout={() => setUser(null)} isDesktop={isDesktopMode} /> : <Navigate to="/login" />}
+                        />
+                        <Route path="*" element={<Navigate to="/" />} />
+                    </Routes>
+                </div>
+                {user && <BottomNav isDesktop={isDesktopMode} />}
             </div>
 
             <style jsx>{`

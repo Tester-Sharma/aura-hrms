@@ -1,0 +1,58 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id              String   @id // W-1001, E-101, H-101
+  password        String   @default("12345")
+  name            String
+  role            String   // 'worker', 'employee', 'hr'
+  designation     String?
+  department      String?
+  phone           String?
+  email           String?
+  joiningDate     DateTime @default(now())
+  address         String?
+  
+  // Worker Specific
+  hourlyRate      Float?
+  shift           String?
+  
+  // Employee Specific
+  monthlySalary   Float?
+  ctc             Float?
+  salaryBreakdown String?  // JSON string
+  
+  attendance      Attendance[]
+  leaveRequests   LeaveRequest[]
+}
+
+model Attendance {
+  id          Int      @id @default(autoincrement())
+  date        DateTime @default(now()) // Represents the "day" of attendance
+  inTime      DateTime?
+  outTime     DateTime?
+  status      String   @default("Absent") // Present, Absent, Leave
+  workedHours Float    @default(0)
+  otHours     Float    @default(0)
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model LeaveRequest {
+  id          String   @id @default(uuid())
+  type        String
+  fromDate    DateTime
+  toDate      DateTime
+  reason      String
+  status      String   @default("Pending") // Pending, Approved, Rejected
+  
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+}

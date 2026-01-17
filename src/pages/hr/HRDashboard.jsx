@@ -3,16 +3,21 @@ import { Users, Calendar, Clock, DollarSign, Activity, PieChart, TrendingUp, Ale
 import mockService from '../../services/mockService';
 
 const HRDashboard = ({ user }) => {
+    console.log('[HRDashboard] Component rendered, user:', user);
     const [stats, setStats] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
         const fetchStats = async () => {
+            console.log('[HRDashboard] Fetching stats...');
             try {
                 const data = await mockService.getHRDashboardStats();
+                console.log('[HRDashboard] Stats received:', data);
                 setStats(data);
             } catch (error) {
-                console.error("Failed to fetch HR stats", error);
+                console.error("[HRDashboard] Failed to fetch HR stats", error);
+                setError(error.message);
             } finally {
                 setIsLoading(false);
             }
@@ -21,13 +26,27 @@ const HRDashboard = ({ user }) => {
     }, []);
 
     if (isLoading) {
+        console.log('[HRDashboard] Rendering loading state');
         return (
-            <div className="loading-container">
+            <div className="loading-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
                 <Activity className="animate-spin" size={48} color="var(--primary)" />
                 <p>Curating HR Intelligence...</p>
             </div>
         );
     }
+
+    if (error) {
+        console.log('[HRDashboard] Rendering error state:', error);
+        return (
+            <div className="error-container" style={{ padding: '40px' }}>
+                <h2>Error Loading Dashboard</h2>
+                <p>{error}</p>
+                <button onClick={() => window.location.reload()}>Retry</button>
+            </div>
+        );
+    }
+
+    console.log('[HRDashboard] Rendering main content');
 
     // Safety check if stats failed to load
     const safeStats = stats || {

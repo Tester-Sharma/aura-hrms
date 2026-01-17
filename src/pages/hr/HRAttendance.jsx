@@ -10,7 +10,10 @@ const HRAttendance = () => {
     // Detail Modal State
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
-    const [selectedMonth, setSelectedMonth] = useState('2023-10');
+    
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const [selectedMonth, setSelectedMonth] = useState(currentMonth);
     const [attendanceHistory, setAttendanceHistory] = useState(null);
     const [historyLoading, setHistoryLoading] = useState(false);
 
@@ -18,10 +21,10 @@ const HRAttendance = () => {
         const loadData = async () => {
             setIsLoading(true);
             try {
-                const data = await mockService.getEmployees();
+                const data = await mockService.getAttendanceToday();
                 setEmployees(data);
             } catch (error) {
-                console.error("Failed to load employees");
+                console.error("Failed to load attendance:", error);
             } finally {
                 setIsLoading(false);
             }
@@ -38,11 +41,10 @@ const HRAttendance = () => {
     const fetchHistory = async (empId, month) => {
         setHistoryLoading(true);
         try {
-            // In a real app, we'd pass empId. Mock service just mocks it based on month.
-            const data = await mockService.getAttendanceHistory(month);
+            const data = await mockService.getEmployeeAttendanceHistory(empId, month);
             setAttendanceHistory(data);
         } catch (error) {
-            console.error("Failed to fetch history");
+            console.error("Failed to fetch history:", error);
         } finally {
             setHistoryLoading(false);
         }
@@ -55,8 +57,8 @@ const HRAttendance = () => {
     }, [selectedMonth]);
 
     const filteredEmployees = employees.filter(emp =>
-        emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        emp.department.toLowerCase().includes(searchTerm.toLowerCase())
+        (emp.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (emp.department || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     return (
@@ -87,12 +89,12 @@ const HRAttendance = () => {
                         ) : filteredEmployees.map(emp => (
                             <div key={emp.id} className="att-card glass fadeIn">
                                 <div className="card-top">
-                                    <div className={`avatar-small ${emp.type === 'Worker' ? 'worker' : 'emp'}`}>
-                                        {emp.name[0]}
+                                    <div className={`avatar-small ${emp.role === 'worker' ? 'worker' : 'emp'}`}>
+                                        {(emp.name || 'U')[0]}
                                     </div>
                                     <div className="emp-ident">
                                         <span className="name">{emp.name}</span>
-                                        <span className="dept">{emp.department}</span>
+                                        <span className="dept">{emp.department || 'N/A'}</span>
                                     </div>
                                     <button className="more-btn" onClick={() => handleViewDetails(emp)}>
                                         <ChevronRight size={18} />
@@ -106,7 +108,9 @@ const HRAttendance = () => {
                                     <div className="div-line"></div>
                                     <div className="stat-item">
                                         <span className="lbl">Status</span>
-                                        <span className="val status-active">Present</span>
+                                        <span className={`val ${emp.status === 'Present' ? 'status-active' : 'status-absent'}`}>
+                                            {emp.status || 'Absent'}
+                                        </span>
                                     </div>
                                 </div>
                             </div>
@@ -133,8 +137,9 @@ const HRAttendance = () => {
                                 onChange={(e) => setSelectedMonth(e.target.value)}
                                 className="month-picker"
                             >
-                                <option value="2023-11">November 2023</option>
-                                <option value="2023-10">October 2023</option>
+                                <option value="2026-01">January 2026</option>
+                                <option value="2025-12">December 2025</option>
+                                <option value="2025-11">November 2025</option>
                             </select>
                         </div>
 
@@ -226,6 +231,7 @@ const HRAttendance = () => {
                 .lbl { font-size: 0.7rem; font-weight: 700; color: #94a3b8; text-transform: uppercase; }
                 .val { font-weight: 800; color: var(--text-main); font-size: 0.95rem; }
                 .status-active { color: #16a34a; }
+                .status-absent { color: #ef4444; }
                 .div-line { width: 1px; height: 24px; background: #e2e8f0; }
 
                 /* Modal */

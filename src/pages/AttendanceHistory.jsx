@@ -3,7 +3,22 @@ import { Calendar, Loader2, Clock, CheckCircle, XCircle, AlertTriangle } from 'l
 import mockService from '../services/mockService';
 
 const AttendanceHistory = ({ isDesktop }) => {
-  const [selectedMonth, setSelectedMonth] = useState('2023-10');
+  // Dynamic Month Generation
+  const getMonthOptions = () => {
+    const options = [];
+    const today = new Date();
+    for (let i = 0; i < 6; i++) {
+        const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        const label = d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        options.push({ value, label });
+    }
+    return options;
+  };
+  
+  const monthOptions = getMonthOptions();
+  const [selectedMonth, setSelectedMonth] = useState(monthOptions[0].value); // Default to current month
+
   const [attendanceData, setAttendanceData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -47,9 +62,9 @@ const AttendanceHistory = ({ isDesktop }) => {
                 onChange={(e) => setSelectedMonth(e.target.value)}
                 className="month-select"
               >
-                <option value="2023-11">November 2023</option>
-                <option value="2023-10">October 2023</option>
-                <option value="2023-09">September 2023</option>
+                {monthOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
               </select>
             </div>
           </div>

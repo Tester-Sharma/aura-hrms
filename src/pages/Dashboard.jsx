@@ -3,14 +3,6 @@ import { Bell, Clock, Info, Play, Square, Activity, History as HistoryIcon, User
 import { format } from 'date-fns';
 import mockService from '../services/mockService';
 
-/**
- * @api GET /api/worker/dashboard
- * @description Fetches dashboard stats and notice board updates.
- * @returns {Promise<{
- *   stats: { workedHours: number, overtime: number, leaveBalance: number, estimatedEarnings: number },
- *   notices: Array<{ id: string, text: string }>
- * }>}
- */
 const Dashboard = ({ user, onLogout, isDesktop }) => {
   const [activeView, setActiveView] = useState('clock'); // 'clock' or 'notice'
   const [clockMode, setClockMode] = useState('analog'); // 'analog' or 'digital'
@@ -21,19 +13,28 @@ const Dashboard = ({ user, onLogout, isDesktop }) => {
   const [notices, setNotices] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Fetch Initial Data
-  useEffect(() => {
     const fetchData = async () => {
       try {
         const data = await mockService.getDashboardData();
         setStats(data.stats);
         setNotices(data.notices);
+        
+        // Sync punch status from backend source of truth
+        if (data.status) {
+            setIsPunchedIn(data.status.isPunchedIn);
+            if (data.status.lastPunchTime && data.status.isPunchedIn) {
+                setPunchTime(new Date(data.status.lastPunchTime));
+            }
+        }
       } catch (error) {
         console.error("Failed to fetch dashboard data", error);
       } finally {
         setIsLoading(false);
       }
     };
+
+  // Fetch Initial Data
+  useEffect(() => {
     fetchData();
   }, []);
 
@@ -63,8 +64,10 @@ const Dashboard = ({ user, onLogout, isDesktop }) => {
       await mockService.punchIn();
       setIsPunchedIn(true);
       setPunchTime(new Date());
+      // Refresh stats to show updated "Worked Hours" if applicable (or at least confirm connectivity)
+      fetchData(); 
     } catch (error) {
-      alert("Punch In failed");
+      alert(`Punch In failed: ${error.message}`);
     }
   };
 
@@ -72,8 +75,10 @@ const Dashboard = ({ user, onLogout, isDesktop }) => {
     try {
       await mockService.punchOut();
       setIsPunchedIn(false);
+      // Refresh stats to show updated "Worked Hours" immediately
+      fetchData();
     } catch (error) {
-      alert("Punch Out failed");
+      alert(`Punch Out failed: ${error.message}`);
     }
   };
 
@@ -122,7 +127,7 @@ const Dashboard = ({ user, onLogout, isDesktop }) => {
       {/* Header - Only on Mobile */}
       {!isDesktop && (
         <header className="dashboard-header">
-          <span className="welcome-text">Hello, {user?.name.split(' ')[0]}</span>
+          <span className="welcome-text">Hello, {user?.name?.split(' ')[0]}</span>
           <button className="icon-button" aria-label="Notifications">
             <Bell size={20} />
             <span className="notification-dot"></span>
@@ -191,16 +196,29 @@ const Dashboard = ({ user, onLogout, isDesktop }) => {
             </button>
           </section>
 
+          {/* Today's Highlight */}
+          <section className="today-highlight glass fadeIn">
+            <div className="highlight-item">
+                <span className="hl-label">Today's Wages</span>
+                <span className="hl-value">₹{(stats.todayEarnings || 0).toLocaleString()}</span>
+            </div>
+            <div className="divider-v"></div>
+            <div className="highlight-item">
+                <span className="hl-label">Today's Hours</span>
+                <span className="hl-value">{(stats.todayWorked || 0)} Hrs</span>
+            </div>
+          </section>
+
           {/* Stats Grid */}
           <section className="stats-grid">
             <div className="stat-card">
               <div className="stat-icon-bg"><Activity size={18} /></div>
-              <span className="stat-label">Worked Hours</span>
+              <span className="stat-label">Total Worked</span>
               <span className="stat-value">{stats.workedHours} Hrs</span>
             </div>
             <div className="stat-card">
               <div className="stat-icon-bg"><Clock size={18} /></div>
-              <span className="stat-label">Overtime</span>
+              <span className="stat-label">Total Overtime</span>
               <span className="stat-value">{stats.overtime} Hrs</span>
             </div>
             <div className="stat-card">
@@ -210,7 +228,7 @@ const Dashboard = ({ user, onLogout, isDesktop }) => {
             </div>
             <div className="stat-card">
               <div className="stat-icon-bg"><LogOut size={18} /></div>
-              <span className="stat-label">Est. Earnings</span>
+              <span className="stat-label">Total Earnings</span>
               <span className="stat-value">₹{stats.estimatedEarnings.toLocaleString()}</span>
             </div>
           </section>
@@ -303,6 +321,43 @@ const Dashboard = ({ user, onLogout, isDesktop }) => {
           overflow: hidden;
           background: linear-gradient(145deg, #ffffff, #f0f0f0);
           border: 1px solid rgba(255,255,255,0.8);
+        }
+
+        .today-highlight {
+          display: flex;
+          justify-content: space-around;
+          align-items: center;
+          padding: 24px;
+          background: white;
+          border-radius: 24px;
+          box-shadow: var(--shadow-sm);
+          border: 1px solid #f1f5f9;
+        }
+
+        .highlight-item {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .hl-label {
+          font-size: 0.8rem;
+          font-weight: 700;
+          color: var(--text-muted);
+          text-transform: uppercase;
+        }
+
+        .hl-value {
+          font-size: 1.5rem;
+          font-weight: 800;
+          color: var(--primary);
+        }
+
+        .divider-v {
+          width: 1px;
+          height: 40px;
+          background: #e2e8f0;
         }
 
         .clock-container {

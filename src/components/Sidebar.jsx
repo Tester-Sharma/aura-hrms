@@ -38,23 +38,23 @@ const Sidebar = ({ user, onLogout }) => {
                     </>
                 ) : (
                     <>
-                        <NavLink to="/" className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
+                        <NavLink to="/hr/" className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
                             <Home size={18} />
                             <span>HR Intelligence</span>
                         </NavLink>
-                        <NavLink to="/employees" className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
+                        <NavLink to="/hr/employees" className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
                             <User size={18} />
                             <span>Talent Pool</span>
                         </NavLink>
-                        <NavLink to="/attendance" className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
+                        <NavLink to="/hr/attendance" className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
                             <Clock size={18} />
                             <span>Attendance Logs</span>
                         </NavLink>
-                        <NavLink to="/leave-approvals" className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
+                        <NavLink to="/hr/leave-approvals" className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
                             <Calendar size={18} />
                             <span>Leave Approvals</span>
                         </NavLink>
-                        <NavLink to="/payroll" className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
+                        <NavLink to="/hr/payroll" className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
                             <Factory size={18} />
                             <span>Financial Engine</span>
                         </NavLink>

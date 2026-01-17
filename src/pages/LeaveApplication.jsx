@@ -2,15 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { Send, Loader2, Calendar, Clock, AlertCircle } from 'lucide-react';
 import mockService from '../services/mockService';
 
-/**
- * @api POST /api/worker/apply-leave
- * @description Submits a leave request.
- * @param {object} leaveData - { type: string, fromDate: string, toDate: string, reason: string }
- * @returns {Promise<{ success: boolean, requestId: string }>}
- */
 const LeaveApplication = ({ isDesktop }) => {
   const [activeTab, setActiveTab] = useState('new');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  /* State for My Leaves */
+  const [myLeaves, setMyLeaves] = useState([]);
   const [leaveStats, setLeaveStats] = useState({ totalBalance: 0, used: 0, pending: 0 });
   const [formData, setFormData] = useState({
     type: 'Casual',
@@ -31,17 +27,32 @@ const LeaveApplication = ({ isDesktop }) => {
     fetchStats();
   }, []);
 
+  // Fetch leaves when switching to Status tab
+  useEffect(() => {
+      if (activeTab === 'status') {
+          const fetchLeaves = async () => {
+              try {
+                  const leaves = await mockService.getMyLeaves();
+                  setMyLeaves(leaves);
+              } catch(e) { console.error(e); }
+          };
+          fetchLeaves();
+      }
+  }, [activeTab]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
     try {
       const response = await mockService.applyLeave(formData);
-      alert(`Leave request submitted! ID: ${response.requestId}`);
+      // Ensure we display some ID
+      const displayId = response.requestId || response.id || 'Submitted';
+      alert(`Leave request submitted! ID: ${displayId}`);
+      
       setFormData({ type: 'Casual', fromDate: '', toDate: '', reason: '' });
-      setActiveTab('status');
-      // Refresh stats in a real app
+      setActiveTab('status'); // Switch to status to see it
     } catch (error) {
-      alert("Failed to submit leave request");
+      alert(`Failed to submit: ${error.message}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -162,14 +173,23 @@ const LeaveApplication = ({ isDesktop }) => {
               </form>
             ) : (
               <div className="status-list">
-                <div className="status-card">
-                  <div className="card-info">
-                    <span className="leave-type">Sick Leave</span>
-                    <span className="leave-date">Oct 12, 2023</span>
-                  </div>
-                  <div className="status-badge pending">Pending</div>
-                </div>
-                <p className="no-more">No other requests found.</p>
+                {myLeaves.length === 0 ? (
+                    <p className="no-more">No requests found.</p>
+                ) : (
+                    myLeaves.map(leave => (
+                        <div key={leave.id} className="status-card">
+                          <div className="card-info">
+                            <span className="leave-type">{leave.type}</span>
+                            <span className="leave-date">
+                                {new Date(leave.fromDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                            </span>
+                          </div>
+                          <div className={`status-badge ${leave.status.toLowerCase()}`}>
+                            {leave.status}
+                          </div>
+                        </div>
+                    ))
+                )}
               </div>
             )}
           </div>

@@ -88,20 +88,29 @@ const HREmployees = () => {
 
     const handleRegister = async () => {
         try {
-            const payload = { ...newEmployee, salaryBreakdown };
+            const payload = { 
+                ...newEmployee, 
+                baseRate: parseFloat(newEmployee.baseRate),
+                salaryBreakdown: salaryBreakdown
+            };
+            
             await mockService.registerEmployee(payload);
+            
             setShowAddModal(false);
             fetchEmployees();
             setAddFormStep(1);
             setNewEmployee({ name: '', email: '', phone: '', address: '', type: 'Worker', department: 'Production', designation: '', shift: '09:00 AM - 05:00 PM', salaryType: 'Hourly', baseRate: '' });
+            alert('Employee registered successfully!');
         } catch (error) {
-            alert("Failed to register");
+            console.error('Registration failed:', error);
+            alert(`Failed to register: ${error.message || 'Unknown error'}`);
         }
     };
 
     const filteredEmployees = employees.filter(emp =>
-        emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        emp.id.toLowerCase().includes(searchTerm.toLowerCase())
+        (emp.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (emp.id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (emp.department || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     if (isLoading && !employees.length) {
@@ -160,7 +169,7 @@ const HREmployees = () => {
                                         <tr key={emp.id} className="fadeIn">
                                             <td>
                                                 <div className="prof-cell">
-                                                    <div className="prof-avatar">{emp.name[0]}</div>
+                                                    <div className="prof-avatar">{emp.name?.[0] || 'U'}</div>
                                                     <div className="prof-info">
                                                         <span className="prof-name">{emp.name}</span>
                                                         <span className="prof-email">{emp.email || 'user@aura.inc'}</span>
@@ -168,20 +177,22 @@ const HREmployees = () => {
                                                 </div>
                                             </td>
                                             <td><span className="id-chip">#{emp.id}</span></td>
-                                            <td><span className="dept-label">{emp.department}</span></td>
-                                            <td><span className="desig-label">{emp.designation}</span></td>
+                                            <td><span className="dept-label">{emp.department || 'N/A'}</span></td>
+                                            <td><span className="desig-label">{emp.designation || 'N/A'}</span></td>
                                             <td>
-                                                <span className={`class-tag ${emp.type.toLowerCase()}`}>
-                                                    {emp.type === 'Worker' ? <ShieldAlert size={12} /> : <BadgeCheck size={12} />}
-                                                    {emp.type}
+                                                <span className={`class-tag ${emp.role || 'employee'}`}>
+                                                    {emp.role === 'worker' ? <ShieldAlert size={12} /> : <BadgeCheck size={12} />}
+                                                    {emp.role === 'worker' ? 'Worker' : emp.role === 'hr' ? 'HR' : 'Employee'}
                                                 </span>
                                             </td>
                                             <td>
                                                 <div className="pay-cell">
                                                     <span className="pay-amount">
-                                                        ₹{emp.type === 'Worker' ? emp.hourlyRate : (emp.monthlySalary || emp.ctc / 12)?.toLocaleString()}
+                                                        ₹{emp.role === 'worker' 
+                                                            ? (emp.hourlyRate || 0).toLocaleString() 
+                                                            : (emp.monthlySalary || (emp.ctc ? emp.ctc / 12 : 0)).toLocaleString()}
                                                     </span>
-                                                    <span className="pay-freq">{emp.type === 'Worker' ? '/hr' : '/mo'}</span>
+                                                    <span className="pay-freq">{emp.role === 'worker' ? '/hr' : '/mo'}</span>
                                                 </div>
                                             </td>
                                             <td>

@@ -2,17 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Download, Clock, LogOut, ChevronRight, Loader2, Wallet, TrendingUp, DollarSign } from 'lucide-react';
 import mockService from '../services/mockService';
 
-/**
- * @api GET /api/worker/profile
- * @description Fetches the worker's profile and job details.
- * @returns {Promise<{
- *   id: string,
- *   name: string,
- *   designation: string,
- *   hourlyRate: number,
- *   shift: string
- * }>}
- */
 const Profile = ({ user: initialUser, onLogout, isDesktop }) => {
   const [user, setUser] = useState(initialUser);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
@@ -49,12 +38,20 @@ const Profile = ({ user: initialUser, onLogout, isDesktop }) => {
 
   return (
     <div className="profile-container">
+      {/* Header - Only on Mobile */}
       {!isDesktop && (
         <header className="page-header">
           <h2>My Profile</h2>
         </header>
       )}
 
+      {/* Loading State for Main Content */}
+      {isLoading ? (
+        <div className="loading-container">
+           <Loader2 className="animate-spin" size={48} color="var(--primary)" />
+           <p>Updating profile...</p>
+        </div>
+      ) : (
       <main className="profile-content-main">
         <div className="content-wrapper">
           {isDesktop && (
@@ -80,10 +77,10 @@ const Profile = ({ user: initialUser, onLogout, isDesktop }) => {
                   <span className="user-designation">{user?.designation}</span>
                 </div>
 
-                {user?.type === 'Worker' ? (
+                {user?.role === 'worker' ? (
                   <div className="rate-badge">
                     <span className="rate-label">Hourly Rate</span>
-                    <span className="rate-value">₹{user?.hourlyRate || '15.00'}</span>
+                    <span className="rate-value">₹{user?.hourlyRate || '0'}</span>
                   </div>
                 ) : (
                   <div className="rate-badge employee">
@@ -103,28 +100,38 @@ const Profile = ({ user: initialUser, onLogout, isDesktop }) => {
                   <div className="salary-list">
                     <div className="salary-row">
                       <span>Basic Pay</span>
-                      <span className="val">₹{user.salaryBreakdown.basic.toLocaleString()}</span>
+                      <span className="val">₹{(user.salaryBreakdown.basic || 0).toLocaleString()}</span>
                     </div>
                     <div className="salary-row">
                       <span>HRA</span>
-                      <span className="val">₹{user.salaryBreakdown.hra.toLocaleString()}</span>
+                      <span className="val">₹{(user.salaryBreakdown.hra || 0).toLocaleString()}</span>
                     </div>
+                    {(user.salaryBreakdown.specialAllowance > 0 || user.salaryBreakdown.special > 0) && (
                     <div className="salary-row">
                       <span>Special Allowance</span>
-                      <span className="val">₹{user.salaryBreakdown.specialAllowance.toLocaleString()}</span>
+                      <span className="val">₹{(user.salaryBreakdown.specialAllowance || user.salaryBreakdown.special || 0).toLocaleString()}</span>
                     </div>
+                    )}
                     <div className="divider"></div>
                     <div className="salary-row deduction">
                       <span>PF Deduction</span>
-                      <span className="val">-₹{user.salaryBreakdown.pf.toLocaleString()}</span>
+                      <span className="val">-₹{(user.salaryBreakdown.pf || 0).toLocaleString()}</span>
                     </div>
                     <div className="salary-row deduction">
                       <span>Prof. Tax</span>
-                      <span className="val">-₹{user.salaryBreakdown.pt.toLocaleString()}</span>
+                      <span className="val">-₹{(user.salaryBreakdown.pt || 0).toLocaleString()}</span>
                     </div>
                     <div className="total-row">
                       <span>Net Payable</span>
-                      <span className="val highlight">₹{user.salaryBreakdown.netPayable.toLocaleString()}</span>
+                      <span className="val highlight">
+                        ₹{(
+                          (user.salaryBreakdown.basic || 0) +
+                          (user.salaryBreakdown.hra || 0) +
+                          (user.salaryBreakdown.specialAllowance || user.salaryBreakdown.special || 0) -
+                          (user.salaryBreakdown.pf || 0) -
+                          (user.salaryBreakdown.pt || 0)
+                        ).toLocaleString()}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -133,6 +140,22 @@ const Profile = ({ user: initialUser, onLogout, isDesktop }) => {
 
             {/* Right Column (Menu) */}
             <div className="menu-list">
+              {user?.role === 'worker' && user?.weeklyStats && (
+                <div className="menu-item stats-badge glass no-ptr">
+                  <div className="menu-left">
+                    <div className="icon-box earnings">
+                      <TrendingUp size={20} />
+                    </div>
+                    <div className="menu-text">
+                      <span className="menu-title">Weekly Earnings</span>
+                      <span className="menu-subtitle">₹{(user.weeklyStats.earnings || 0).toLocaleString()} ({user.weeklyStats.hours} hrs)</span>
+                    </div>
+                  </div>
+                  <div className="period-label">This Week</div>
+                </div>
+              )}
+
+              {user?.role !== 'worker' && (
               <button className="menu-item glass" onClick={handleDownloadPayslip} disabled={isDownloading}>
                 <div className="menu-left">
                   <div className="icon-box pdf">
@@ -140,11 +163,12 @@ const Profile = ({ user: initialUser, onLogout, isDesktop }) => {
                   </div>
                   <div className="menu-text">
                     <span className="menu-title">Download Payslip</span>
-                    <span className="menu-subtitle">November 2023</span>
+                    <span className="menu-subtitle">Current Month</span>
                   </div>
                 </div>
                 <ChevronRight size={18} color="#94a3b8" />
               </button>
+              )}
 
               <div className="menu-group">
                 <button
@@ -195,11 +219,6 @@ const Profile = ({ user: initialUser, onLogout, isDesktop }) => {
           </div>
         </div>
       </main>
-
-      {isLoading && (
-        <div className="loading-overlay">
-          <Loader2 className="animate-spin" size={32} color="var(--primary)" />
-        </div>
       )}
 
       {/* Logout Modal */}
@@ -336,6 +355,10 @@ const Profile = ({ user: initialUser, onLogout, isDesktop }) => {
           padding: 12px 24px;
           border-radius: 16px;
           border: 1px solid #f5d0fe;
+          display: flex !important;
+          flex-direction: column !important;
+          align-items: center !important;
+          gap: 4px;
         }
         
         .rate-badge.employee {
@@ -376,9 +399,41 @@ const Profile = ({ user: initialUser, onLogout, isDesktop }) => {
 
         .icon-box.pdf { background-color: #ecfeff; color: #0891b2; }
         .icon-box.shift { background-color: #f5f3ff; color: #7c3aed; }
+        .icon-box.earnings { background-color: #f0fdf4; color: #16a34a; }
 
-        .menu-title { font-weight: 800; color: var(--text-main); font-size: 1.1rem; }
-        .menu-subtitle { font-size: 0.85rem; color: var(--text-muted); font-weight: 600; }
+        .no-ptr { cursor: default; }
+        .no-ptr:hover { transform: none; box-shadow: var(--shadow-sm); }
+        
+        .period-label {
+          background: #f1f5f9;
+          padding: 6px 12px;
+          border-radius: 12px;
+          font-size: 0.75rem;
+          font-weight: 800;
+          color: #64748b;
+          text-transform: uppercase;
+        }
+
+        .menu-left { display: flex; align-items: center; gap: 16px; }
+        .menu-text { 
+           display: flex !important; 
+           flex-direction: column !important; 
+           text-align: left;
+           gap: 2px;
+        }
+        .menu-title { 
+           display: block;
+           font-weight: 800; 
+           color: var(--text-main); 
+           font-size: 1.1rem; 
+           line-height: 1.2; 
+        }
+        .menu-subtitle { 
+           display: block;
+           font-size: 0.85rem; 
+           color: var(--text-muted); 
+           font-weight: 600; 
+        }
 
         .expandable-content {
           background: #f8fafc;
