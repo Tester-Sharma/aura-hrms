@@ -11,5 +11,9 @@ export default defineConfig({
         hr: './hr.html'
       }
     }
+  },
+  preview: {
+    allowedHosts: true,
+    host: true
   }
 })
