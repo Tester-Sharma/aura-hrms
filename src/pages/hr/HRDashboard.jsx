@@ -180,7 +180,7 @@ const HRDashboard = ({ user }) => {
                                 <div className="feed-item">
                                     <div className="item-icon"><Users size={18} /></div>
                                     <div className="item-info">
-                                        <p><strong>Onboarding</strong> 2 new hires joined</p>
+                                        <p><strong>Recruitment</strong> 2 new hires joined</p>
                                         <span>Completed for Quality & Safety team</span>
                                     </div>
                                     <button className="item-go"><ArrowUpRight size={18} /></button>

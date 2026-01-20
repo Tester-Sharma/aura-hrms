@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Search, Filter, Clock, MoreVertical, X, CheckCircle, XCircle, AlertTriangle, ChevronRight } from 'lucide-react';
+import { Calendar, Search, Filter, Clock, MoreVertical, X, CheckCircle, XCircle, AlertTriangle, ChevronRight, Download, Plus, Save, Edit } from 'lucide-react';
 import mockService from '../../services/mockService';
 
 const HRAttendance = () => {
@@ -10,6 +10,12 @@ const HRAttendance = () => {
     // Detail Modal State
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
+    
+    // Manual Entry Modal
+    const [showManualModal, setShowManualModal] = useState(false);
+    const [manualData, setManualData] = useState({
+        userId: '', date: new Date().toISOString().split('T')[0], status: 'Present', inTime: '', outTime: ''
+    });
     
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -23,6 +29,8 @@ const HRAttendance = () => {
             try {
                 const data = await mockService.getAttendanceToday();
                 setEmployees(data);
+                // Pre-select first employee for manual entry
+                if (data.length > 0) setManualData(prev => ({ ...prev, userId: data[0].id }));
             } catch (error) {
                 console.error("Failed to load attendance:", error);
             } finally {
@@ -50,6 +58,27 @@ const HRAttendance = () => {
         }
     };
 
+    const handleManualSubmit = async () => {
+        try {
+            await mockService.markManualAttendance(manualData);
+            alert("Attendance Updated Successfully");
+            setShowManualModal(false);
+            // Refresh data
+            const data = await mockService.getAttendanceToday();
+            setEmployees(data);
+        } catch (e) {
+            alert("Failed to update attendance");
+        }
+    };
+
+    const handleDownloadSheet = async () => {
+        try {
+            await mockService.downloadAttendanceSheet(selectedMonth);
+        } catch (e) {
+            alert("Download Failed");
+        }
+    };
+
     useEffect(() => {
         if (selectedEmployee && showDetailModal) {
             fetchHistory(selectedEmployee.id, selectedMonth);
@@ -68,6 +97,16 @@ const HRAttendance = () => {
                     <h1>Attendance Monitoring</h1>
                     <p>Track workforce presence and anomalies in real-time.</p>
                 </div>
+                <div className="header-actions">
+                    <button className="secondary-btn" onClick={() => setShowManualModal(true)}>
+                        <Edit size={18} />
+                        <span>Manual Entry</span>
+                    </button>
+                    <button className="primary-btn" onClick={handleDownloadSheet}>
+                        <Download size={18} />
+                        <span>Download Sheet</span>
+                    </button>
+                </div>
             </header>
 
             <main className="attendance-content">
@@ -81,6 +120,15 @@ const HRAttendance = () => {
                                 onChange={e => setSearchTerm(e.target.value)}
                             />
                         </div>
+                        
+                         <select
+                            value={selectedMonth}
+                            onChange={(e) => setSelectedMonth(e.target.value)}
+                            className="month-select"
+                        >
+                            <option value="2026-01">January 2026</option>
+                            <option value="2025-12">December 2025</option>
+                        </select>
                     </div>
 
                     <div className="cards-grid">
@@ -118,6 +166,59 @@ const HRAttendance = () => {
                     </div>
                 </div>
             </main>
+
+            {/* Manual Entry Modal */}
+            {showManualModal && (
+                <div className="modal-overlay">
+                    <div className="modal-content fadeIn">
+                        <div className="modal-header">
+                            <h2>Manual Attendance Entry</h2>
+                            <button className="close-btn" onClick={() => setShowManualModal(false)}><X size={20} /></button>
+                        </div>
+                        <div className="modal-body" style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            <div className="form-group">
+                                <label>Employee</label>
+                                <select 
+                                    value={manualData.userId} 
+                                    onChange={e => setManualData({...manualData, userId: e.target.value})}
+                                    style={{ width: '100%', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0' }}
+                                >
+                                    {employees.map(e => <option key={e.id} value={e.id}>{e.name} ({e.id})</option>)}
+                                </select>
+                            </div>
+                            <div className="form-group grid-2">
+                                <div>
+                                    <label>Date</label>
+                                    <input type="date" value={manualData.date} onChange={e => setManualData({...manualData, date: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label>Status</label>
+                                    <select value={manualData.status} onChange={e => setManualData({...manualData, status: e.target.value})}>
+                                        <option value="Present">Present</option>
+                                        <option value="Absent">Absent</option>
+                                        <option value="Leave">Leave</option>
+                                        <option value="Half Day">Half Day</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="form-group grid-2">
+                                <div>
+                                    <label>In Time</label>
+                                    <input type="time" value={manualData.inTime} onChange={e => setManualData({...manualData, inTime: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label>Out Time</label>
+                                    <input type="time" value={manualData.outTime} onChange={e => setManualData({...manualData, outTime: e.target.value})} />
+                                </div>
+                            </div>
+                            <button className="primary-btn full" onClick={handleManualSubmit}>
+                                <Save size={18} />
+                                <span>Save Record</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Detailed History Modal */}
             {showDetailModal && selectedEmployee && (
@@ -200,14 +301,22 @@ const HRAttendance = () => {
 
             <style jsx>{`
                 .hr-attendance-container { flex: 1; display: flex; flex-direction: column; background-color: var(--background); }
-                .hr-page-header { padding: 40px; background: linear-gradient(135deg, var(--primary-dark) 0%, #312e81 100%); color: white; box-shadow: var(--shadow-md); }
+                .hr-page-header { padding: 40px; background: linear-gradient(135deg, var(--primary-dark) 0%, #312e81 100%); color: white; box-shadow: var(--shadow-md); display: flex; justify-content: space-between; align-items: center; }
                 .header-content h1 { font-size: 2.5rem; font-weight: 800; }
-                
+                .header-actions { display: flex; gap: 16px; }
+                .primary-btn { background: white; color: var(--primary-dark); border: none; padding: 12px 24px; border-radius: 12px; font-weight: 800; display: flex; alignItems: center; gap: 8px; cursor: pointer; transition: all 0.2s; }
+                .primary-btn:hover { background: #f8fafc; transform: translateY(-2px); }
+                .primary-btn.full { width: 100%; background: var(--primary); color: white; justify-content: center; }
+                .secondary-btn { background: rgba(255,255,255,0.1); color: white; border: 1px solid rgba(255,255,255,0.2); padding: 12px 24px; border-radius: 12px; font-weight: 800; display: flex; alignItems: center; gap: 8px; cursor: pointer; transition: all 0.2s; }
+                .secondary-btn:hover { background: rgba(255,255,255,0.2); }
+
                 .attendance-content { flex: 1; overflow-y: auto; padding-top: 40px; }
                 .content-wrapper { max-width: 1400px; margin: 0 auto; padding: 0 40px 60px; display: flex; flex-direction: column; gap: 32px; }
+                .controls-row { display: flex; justify-content: space-between; align-items: center; }
                 
                 .search-barrier { background: white; padding: 0 20px; border-radius: 16px; display: flex; align-items: center; gap: 14px; border: 1px solid #f1f5f9; width: 100%; max-width: 500px; }
                 .search-barrier input { border: none; height: 50px; outline: none; width: 100%; font-size: 1rem; }
+                .month-select { padding: 12px; border-radius: 12px; border: 1px solid #f1f5f9; font-weight: 700; color: var(--text-main); height: 50px; }
                 
                 .cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
                 
@@ -244,6 +353,12 @@ const HRAttendance = () => {
                 .id-badge { background: white; padding: 4px 10px; border-radius: 8px; font-weight: 700; color: #64748b; border: 1px solid #e2e8f0; font-size: 0.8rem; }
                 .close-btn { background: none; border: none; cursor: pointer; color: #94a3b8; }
                 
+                /* Form Styles */
+                .form-group { display: flex; flex-direction: column; gap: 8px; }
+                .form-group label { font-weight: 700; color: #64748b; font-size: 0.9rem; }
+                .form-group input, .form-group select { padding: 12px; border-radius: 12px; border: 1px solid #e2e8f0; outline: none; font-size: 1rem; }
+                .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
                 .modal-controls { padding: 16px 24px; display: flex; justify-content: flex-end; }
                 .month-picker { padding: 8px 16px; border-radius: 10px; border: 1px solid #e2e8f0; font-weight: 600; color: var(--text-main); outline: none; }
                 

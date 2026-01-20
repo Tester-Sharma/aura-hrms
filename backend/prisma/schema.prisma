@@ -30,6 +30,21 @@ model User {
   
   attendance      Attendance[]
   leaveRequests   LeaveRequest[]
+  
+  // New fields for Phase 2
+  photo           String?   // Base64 storage
+}
+
+model Company {
+  id          String   @id @default(uuid())
+  name        String
+  address     String
+  logo        String?  // Base64 storage
+  taxId       String?
+  phone       String?
+  email       String?
+  website     String?
+  createdAt   DateTime @default(now())
 }
 
 model Attendance {

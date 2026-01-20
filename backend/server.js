@@ -8,7 +8,8 @@ const prisma = new PrismaClient();
 const PORT = process.env.PORT || 5001;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 const sendResponse = (res, data = null, success = true, message = '', error = null) => {
     if (!success) {
@@ -274,17 +275,47 @@ app.get('/api/worker/profile', async (req, res) => {
 
 // Download Payslip (PDF)
 app.get('/api/worker/download-payslip', async (req, res) => {
-    const { userId } = req.query;
+    const { userId, overrideDays, month } = req.query; // overrides
     try {
         const user = await prisma.user.findUnique({ where: { id: userId } });
         if (!user) return res.status(404).send('User not found');
         
+        const company = await prisma.company.findFirst();
+
         let salary = {};
         try { salary = JSON.parse(user.salaryBreakdown || '{}'); } catch(e) {}
         
-        // Calculate Net
-        const special = salary.special || salary.specialAllowance || 0;
-        const earnings = (salary.basic || 0) + (salary.hra || 0) + special;
+        // --- Calculation Logic with Override ---
+        let earnings = 0; 
+        let basic = salary.basic || 0;
+        let hra = salary.hra || 0;
+        let special = salary.special || salary.specialAllowance || 0;
+        
+        // If Worker (Hourly)
+        if (user.role === 'worker') {
+            // If override days provided, assume 8 hours per day
+            if (overrideDays) {
+                earnings = parseFloat(overrideDays) * 8 * (user.hourlyRate || 0);
+            } else {
+                // Default to standard ESTIMATE if not provided OR fetch actuals (complex)
+                // For simplicity in this "Instant" generation, we use stored or estimate
+                earnings = 26 * 8 * (user.hourlyRate || 0); 
+            }
+            basic = earnings; // Structure for worker often simpler
+            hra = 0; special = 0;
+        } else {
+            // Employee
+            if (overrideDays) {
+                const ratio = parseFloat(overrideDays) / 26; // 26 working days standard
+                basic *= ratio;
+                hra *= ratio;
+                special *= ratio;
+                earnings = basic + hra + special;
+            } else {
+                earnings = basic + hra + special;
+            }
+        }
+
         const deductions = (salary.pf || 0) + (salary.pt || 0);
         const netPayable = earnings - deductions;
 
@@ -297,26 +328,37 @@ app.get('/api/worker/download-payslip', async (req, res) => {
         doc.pipe(res);
 
         // -- HEADER --
-        doc.fillColor('#44337a') // Primary Purple
+        if (company?.logo) {
+            try {
+                const logoBuffer = Buffer.from(company.logo.split(',')[1], 'base64');
+                doc.image(logoBuffer, 50, 45, { width: 50 });
+            } catch (e) {}
+        }
+
+        doc.fillColor('#44337a')
            .fontSize(20)
-           .text('AURA HRMS', { align: 'center' })
+           .text(company?.name || 'AURA HRMS', { align: 'center' })
            .fontSize(10)
-           .text('123 Corporate Park, Tech City, India', { align: 'center' })
+           .text(company?.address || 'Corporate Office', { align: 'center' })
            .moveDown();
 
-        doc.moveTo(50, 100).lineTo(550, 100).strokeColor('#e2e8f0').stroke();
+        doc.moveTo(50, 110).lineTo(550, 110).strokeColor('#e2e8f0').stroke();
         
         doc.moveDown();
         doc.fillColor('black').fontSize(16).text('PAYSLIP', { align: 'center', underline: true });
-        doc.fontSize(10).text(`For the month of ${new Date().toLocaleString('default', { month: 'long', year: 'numeric' })}`, { align: 'center' });
+        
+        const dateObj = month ? new Date(month + '-01') : new Date();
+        doc.fontSize(10).text(`For the month of ${dateObj.toLocaleString('default', { month: 'long', year: 'numeric' })}`, { align: 'center' });
         doc.moveDown();
 
+        // Details Box
         const yStart = doc.y;
         doc.rect(50, yStart, 500, 70).fillAndStroke('#f8fafc', '#cbd5e1');
         doc.fillColor('black');
         
         doc.text('Name:', 70, yStart + 15).text(user.name, 150, yStart + 15);
         doc.text('Employee ID:', 70, yStart + 35).text(user.id, 150, yStart + 35);
+        doc.text('Paid Days:', 70, yStart + 55).text(overrideDays || 'Full Month', 150, yStart + 55);
         
         doc.text('Department:', 300, yStart + 15).text(user.department || '-', 400, yStart + 15);
         doc.text('Designation:', 300, yStart + 35).text(user.designation || '-', 400, yStart + 35);
@@ -328,75 +370,153 @@ app.get('/api/worker/download-payslip', async (req, res) => {
         doc.font('Helvetica-Bold');
         
         // Coordinates
-        const c1_x = 50;
-        const c1_val_x = 200;
-        const c1_val_w = 80; // Ends at 280
-        
-        const c2_x = 310;
-        const c2_val_x = 460;
-        const c2_val_w = 80; // Ends at 540
+        const c1_x = 50; const c1_val_x = 200;
+        const c2_x = 310; const c2_val_x = 460;
         
         doc.text('EARNINGS', c1_x, tableTop);
-        doc.text('AMOUNT (INR)', c1_val_x, tableTop, { width: c1_val_w, align: 'right' });
+        doc.text('AMOUNT', c1_val_x, tableTop, { width: 80, align: 'right' });
         
         doc.text('DEDUCTIONS', c2_x, tableTop);
-        doc.text('AMOUNT (INR)', c2_val_x, tableTop, { width: c2_val_w, align: 'right' });
+        doc.text('AMOUNT', c2_val_x, tableTop, { width: 80, align: 'right' });
         
         doc.font('Helvetica');
-        
         doc.moveTo(50, tableTop + 15).lineTo(550, tableTop + 15).stroke();
         
         let rowY = tableTop + 25;
-        const addRow = (label, amt, xLabel, xAmtStart, xAmtW) => {
-            if(amt) {
-                doc.text(label, xLabel, rowY);
-                doc.text(amt.toLocaleString(), xAmtStart, rowY, { width: xAmtW, align: 'right' });
+        const addRow = (label, amt, xL, xV) => {
+            if(amt && amt > 0) {
+                doc.text(label, xL, rowY);
+                doc.text(Math.round(amt).toLocaleString(), xV, rowY, { width: 80, align: 'right' });
+                return true;
             }
+            return false;
         };
 
-        // Earnings List
-        addRow('Basic Pay', salary.basic, c1_x, c1_val_x, c1_val_w); rowY += 20;
-        addRow('HRA', salary.hra, c1_x, c1_val_x, c1_val_w); rowY += 20;
-        addRow('Special Allowance', special, c1_x, c1_val_x, c1_val_w); rowY += 20;
+        // Left Side
+        let ly = rowY;
+        addRow('Basic Pay', basic, c1_x, c1_val_x); ly += 20;
+        if (hra > 0) { doc.text('HRA', c1_x, ly); doc.text(Math.round(hra).toLocaleString(), c1_val_x, ly, { width: 80, align: 'right' }); ly += 20; }
+        if (special > 0) { doc.text('Special Allow.', c1_x, ly); doc.text(Math.round(special).toLocaleString(), c1_val_x, ly, { width: 80, align: 'right' }); ly += 20; }
+
+        // Right Side
+        let ry = rowY;
+        addRow('Provident Fund', salary.pf, c2_x, c2_val_x); if (salary.pf > 0) ry += 20;
+        addRow('Professional Tax', salary.pt, c2_x, c2_val_x); if (salary.pt > 0) ry += 20;
+
+        const finalY = Math.max(ly, ry) + 20;
+        doc.moveTo(50, finalY).lineTo(550, finalY).stroke();
         
-        // Deductions List
-        let dedY = tableTop + 25;
-        const addDed = (label, amt) => {
-             if(amt !== undefined) {
-                 doc.text(label, c2_x, dedY);
-                 doc.text(amt.toLocaleString(), c2_val_x, dedY, { width: c2_val_w, align: 'right' });
-                 dedY += 20;
-             }
-        };
-        addDed('Provident Fund', salary.pf);
-        addDed('Professional Tax', salary.pt);
-        
-        rowY = Math.max(rowY, dedY) + 10;
-        
-        doc.moveTo(50, rowY).lineTo(550, rowY).stroke();
-        rowY += 10;
-        
-        // Totals
         doc.font('Helvetica-Bold');
-        doc.text('Total Earnings', c1_x, rowY);
-        doc.text(earnings.toLocaleString(), c1_val_x, rowY, { width: c1_val_w, align: 'right' });
+        doc.text('Total Earnings', c1_x, finalY + 10);
+        doc.text(Math.round(earnings).toLocaleString(), c1_val_x, finalY + 10, { width: 80, align: 'right' });
         
-        doc.text('Total Deductions', c2_x, rowY);
-        doc.text(deductions.toLocaleString(), c2_val_x, rowY, { width: c2_val_w, align: 'right' });
-        
-        rowY += 30;
-        doc.rect(50, rowY, 500, 40).fill('#e0e7ff');
-        doc.fillColor('#3730a3').fontSize(14).text('NET PAYABLE', 70, rowY + 12);
-        doc.text(`INR ${netPayable.toLocaleString()}`, 380, rowY + 12, { width: 150, align: 'right' });
-        
-        // Footer
-        doc.text('This is a computer generated document.', 50, 700, { align: 'center' });
+        doc.text('Total Deductions', c2_x, finalY + 10);
+        doc.text(Math.round(deductions).toLocaleString(), c2_val_x, finalY + 10, { width: 80, align: 'right' });
+
+        const netY = finalY + 40;
+        doc.rect(50, netY, 500, 40).fill('#e0e7ff');
+        doc.fillColor('#3730a3').fontSize(14).text('NET PAYABLE', 70, netY + 12);
+        doc.text(`INR ${Math.round(netPayable).toLocaleString()}`, 380, netY + 12, { width: 150, align: 'right' });
         
         doc.end();
 
     } catch (e) {
         console.error(e);
         res.status(500).send("PDF Generation Failed");
+    }
+});
+
+// HR: Generate Salary Sheet
+app.post('/api/hr/salary-sheet/pdf', async (req, res) => {
+    const { month, overrides } = req.body; // overrides = { userId: days }
+    try {
+        const users = await prisma.user.findMany({ 
+            where: { role: { in: ['worker', 'employee'] } },
+            orderBy: { name: 'asc' }
+        });
+        const company = await prisma.company.findFirst();
+
+        const doc = new PDFDocument({ margin: 30, layout: 'landscape' });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=SalarySheet_${month}.pdf`);
+        doc.pipe(res);
+
+        doc.fontSize(18).text(`${company?.name || 'AURA'} - Salary Sheet (${month})`, { align: 'center' });
+        doc.moveDown();
+
+        // Table Header
+        const startX = 30;
+        let y = 100;
+        doc.fontSize(9).font('Helvetica-Bold');
+        
+        const cols = [
+            { name: 'ID', w: 50 },
+            { name: 'Name', w: 120 },
+            { name: 'Role', w: 60 },
+            { name: 'Days', w: 40 },
+            { name: 'Basic', w: 70 },
+            { name: 'HRA', w: 70 },
+            { name: 'Special', w: 70 },
+            { name: 'Gross', w: 80 },
+            { name: 'Deductions', w: 70 },
+            { name: 'Net Pay', w: 80 }
+        ];
+
+        let x = startX;
+        cols.forEach(c => {
+            doc.text(c.name, x, y);
+            x += c.w;
+        });
+        
+        y += 15;
+        doc.moveTo(startX, y).lineTo(x, y).stroke();
+        y += 10;
+        doc.font('Helvetica');
+
+        // Rows
+        users.forEach(u => {
+             if (y > 500) { doc.addPage({ layout: 'landscape' }); y = 50; }
+
+             // Calc
+             let salary = {};
+             try { salary = JSON.parse(u.salaryBreakdown || '{}'); } catch(e) {}
+             
+             const days = overrides?.[u.id] ? parseFloat(overrides[u.id]) : 26;
+             const ratio = days / 26;
+
+             let basic = 0, hra = 0, special = 0;
+             if (u.role === 'employee') {
+                 basic = (salary.basic || 0) * ratio;
+                 hra = (salary.hra || 0) * ratio;
+                 special = (salary.specialAllowance || 0) * ratio;
+             } else {
+                 basic = days * 8 * (u.hourlyRate || 0); // Worker assumption
+             }
+             
+             const gross = basic + hra + special;
+             const ded = (salary.pf || 0) + (salary.pt || 0);
+             const net = gross - ded;
+
+             let cx = startX;
+             doc.text(u.id, cx, y, { width: 50 }); cx += 50;
+             doc.text(u.name, cx, y, { width: 120, ellipsis: true }); cx += 120;
+             doc.text(u.role, cx, y, { width: 60 }); cx += 60;
+             doc.text(days.toString(), cx, y, { width: 40 }); cx += 40;
+             doc.text(Math.round(basic).toString(), cx, y, { width: 60 }); cx += 70;
+             doc.text(Math.round(hra).toString(), cx, y, { width: 60 }); cx += 70;
+             doc.text(Math.round(special).toString(), cx, y, { width: 60 }); cx += 70;
+             doc.font('Helvetica-Bold').text(Math.round(gross).toString(), cx, y, { width: 70 }); cx += 80;
+             doc.font('Helvetica').text(Math.round(ded).toString(), cx, y, { width: 60 }); cx += 70;
+             doc.font('Helvetica-Bold').text(Math.round(net).toString(), cx, y, { width: 70 });
+             
+             y += 20;
+             doc.font('Helvetica');
+        });
+
+        doc.end();
+    } catch(e) {
+        console.error(e);
+        res.status(500).send("Error");
     }
 });
 
@@ -525,6 +645,7 @@ app.post('/api/hr/register-employee', async (req, res) => {
             shift: data.shift || '09:00 AM - 05:00 PM',
             joiningDate: new Date(),
             ...salaryFields,
+            photo: data.photo, // Add photo to user data
             salaryBreakdown: data.salaryBreakdown ? JSON.stringify(data.salaryBreakdown) : null,
             password: '12345'
         };
@@ -537,6 +658,89 @@ app.post('/api/hr/register-employee', async (req, res) => {
     } catch (e) { 
         console.error('Registration Error:', e.message);
         res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+// Generate Employee Application Form (PDF)
+app.get('/api/hr/application-form/:userId', async (req, res) => {
+    const { userId } = req.params;
+    try {
+        const user = await prisma.user.findUnique({ where: { id: userId } });
+        if (!user) return res.status(404).send("User not found");
+
+        const company = await prisma.company.findFirst();
+
+        const doc = new PDFDocument({ margin: 40 });
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=Application_${user.name}.pdf`);
+        doc.pipe(res);
+
+        // -- HEADER --
+        if (company?.logo) {
+            try {
+                const logoBuffer = Buffer.from(company.logo.split(',')[1], 'base64');
+                doc.image(logoBuffer, 40, 40, { width: 50 });
+            } catch (e) { console.error("Logo Error", e); }
+        }
+
+        doc.fontSize(20).font('Helvetica-Bold').text(company?.name || 'AURA HRMS', 100, 45);
+        doc.fontSize(10).font('Helvetica').text(company?.address || 'Corporate Office', 100, 70);
+        
+        doc.moveDown(4);
+
+        // -- TITLE --
+        doc.fontSize(16).text('EMPLOYEE APPLICATION FORM', { align: 'center', underline: true });
+        doc.moveDown(2);
+
+        // -- PHOTO --
+        if (user.photo) {
+            try {
+                const photoBuffer = Buffer.from(user.photo.split(',')[1], 'base64');
+                doc.image(photoBuffer, 450, 40, { width: 100, height: 100, fit: [100, 100] });
+            } catch (e) { console.error("Photo Error", e); }
+        }
+
+        // -- DETAILS --
+        const yStart = doc.y;
+        
+        const field = (label, value, y) => {
+            doc.font('Helvetica-Bold').fontSize(11).text(label, 50, y);
+            doc.font('Helvetica').text(value || '-', 200, y);
+            doc.moveTo(50, y + 15).lineTo(550, y + 15).strokeColor('#e2e8f0').stroke();
+        };
+
+        let currentY = yStart;
+        field('Full Name:', user.name, currentY); currentY += 30;
+        field('Employee ID:', user.id, currentY); currentY += 30;
+        field('Date of Joining:', new Date(user.joiningDate).toLocaleDateString(), currentY); currentY += 30;
+        field('Designation:', user.designation, currentY); currentY += 30;
+        field('Department:', user.department, currentY); currentY += 30;
+        field('Email Address:', user.email, currentY); currentY += 30;
+        field('Phone Number:', user.phone, currentY); currentY += 30;
+        field('Current Address:', user.address, currentY); currentY += 30;
+        
+        doc.moveDown(2);
+        
+        // -- DECLARATION --
+        doc.fontSize(12).font('Helvetica-Bold').text('Declaration', 50);
+        doc.fontSize(10).font('Helvetica').text(
+            'I hereby declare that the details furnished above are true and correct to the best of my knowledge and belief.',
+            50, doc.y + 10, { width: 500 }
+        );
+
+        doc.moveDown(4);
+        
+        doc.text('__________________________', 50);
+        doc.text('Employee Signature', 50);
+        
+        doc.text('__________________________', 350);
+        doc.text('Authorised Signatory', 350);
+
+        doc.end();
+
+    } catch (e) {
+        console.error(e);
+        res.status(500).send("PDF Generation Failed");
     }
 });
 
@@ -555,6 +759,167 @@ app.get('/api/hr/pending-leaves', async (req, res) => {
     } catch (e) {
         console.error(e);
         res.status(500).send("Error");
+    }
+});
+
+// HR: Manual Attendance Entry
+app.post('/api/hr/attendance/manual', async (req, res) => {
+    const { userId, date, status, inTime, outTime } = req.body;
+    try {
+        const targetDate = new Date(date);
+        
+        // Find existing record for this user & date
+        // Note: Check date range to span that specific day
+        const startOfDay = new Date(targetDate); startOfDay.setHours(0,0,0,0);
+        const endOfDay = new Date(targetDate); endOfDay.setHours(23,59,59,999);
+        
+        const existing = await prisma.attendance.findFirst({
+            where: {
+                userId,
+                date: { gte: startOfDay, lte: endOfDay }
+            }
+        });
+
+        // Calculate hours if times are provided
+        let workedHours = 0;
+        let ot = 0;
+        let inDate = null;
+        let outDate = null;
+
+        if (inTime && outTime) {
+            inDate = new Date(`${date}T${inTime}`);
+            outDate = new Date(`${date}T${outTime}`);
+            const diff = outDate - inDate;
+            workedHours = parseFloat((diff / (1000 * 60 * 60)).toFixed(2));
+            if (workedHours > 9) ot = parseFloat((workedHours - 9).toFixed(2));
+        } else if (inTime) {
+            inDate = new Date(`${date}T${inTime}`);
+        }
+
+        const data = {
+            userId,
+            date: targetDate,
+            status,
+            inTime: inDate,
+            outTime: outDate,
+            workedHours,
+            otHours: ot
+        };
+
+        if (existing) {
+            await prisma.attendance.update({ where: { id: existing.id }, data });
+        } else {
+            await prisma.attendance.create({ data });
+        }
+
+        res.json({ success: true });
+    } catch (e) {
+        console.error(e);
+        res.status(500).send("Update Failed");
+    }
+});
+
+// HR: Download Attendance Sheet PDF
+app.post('/api/hr/attendance-sheet/pdf', async (req, res) => {
+    const { month } = req.body; // YYYY-MM
+    try {
+        const [year, monthNum] = month.split('-');
+        const startDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
+        const endDate = new Date(parseInt(year), parseInt(monthNum), 0);
+        const daysInMonth = endDate.getDate();
+
+        // Fetch Data
+        const employees = await prisma.user.findMany({ 
+            where: { role: { in: ['worker', 'employee'] } },
+            orderBy: { name: 'asc' } 
+        });
+
+        const attendance = await prisma.attendance.findMany({
+            where: {
+                date: {
+                    gte: startDate,
+                    lte: new Date(endDate.setHours(23,59,59))
+                }
+            }
+        });
+
+        const doc = new PDFDocument({ margin: 20, layout: 'landscape', size: 'A3' }); // A3 for width
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=Attendance_${month}.pdf`);
+        doc.pipe(res);
+
+        doc.fontSize(18).text(`Attendance Sheet - ${new Date(startDate).toLocaleString('default', { month: 'long', year: 'numeric' })}`, { align: 'center' });
+        doc.moveDown();
+
+        const startX = 20;
+        const startY = 80;
+        const cellWidth = 25;
+        const nameWidth = 150;
+        const rowHeight = 20;
+
+        // Draw Header
+        doc.fontSize(8);
+        doc.text('Employee', startX, startY + 5);
+        
+        for (let i = 1; i <= daysInMonth; i++) {
+            doc.text(i.toString(), startX + nameWidth + ((i-1) * cellWidth) + 8, startY + 5);
+        }
+        
+        // Grid Lines (Header)
+        doc.rect(startX, startY, nameWidth + (daysInMonth * cellWidth), rowHeight).stroke();
+        
+        // Draw Rows
+        let currentY = startY + rowHeight;
+        employees.forEach(emp => {
+            if (currentY > 750) { // New Page
+                doc.addPage({ margin: 20, layout: 'landscape', size: 'A3' });
+                currentY = 40;
+            }
+
+            doc.text(emp.name, startX + 5, currentY + 5, { width: nameWidth - 5, ellipsis: true });
+            
+            for (let i = 1; i <= daysInMonth; i++) {
+                const dayDate = new Date(year, monthNum - 1, i);
+                const record = attendance.find(a => 
+                    a.userId === emp.id && 
+                    new Date(a.date).getDate() === i
+                );
+
+                let mark = '-';
+                if (record) {
+                    if (record.status === 'Present') mark = 'P';
+                    else if (record.status === 'Absent') mark = 'A';
+                    else if (record.status === 'Leave') mark = 'L';
+                    else if (record.status === 'Half Day') mark = 'HD';
+                }
+
+                // Highlight Color
+                if (mark === 'A') doc.fillColor('red');
+                else if (mark === 'L') doc.fillColor('blue');
+                else doc.fillColor('black');
+
+                doc.text(mark, startX + nameWidth + ((i-1) * cellWidth) + 8, currentY + 5);
+                doc.fillColor('black'); // Reset
+            }
+            
+            // Row Border
+            doc.rect(startX, currentY, nameWidth + (daysInMonth * cellWidth), rowHeight).stroke();
+            currentY += rowHeight;
+        });
+
+        // Vertical Lines for Matrix
+        // Left Border (Name)
+        // doc.moveTo(startX + nameWidth, startY).lineTo(startX + nameWidth, currentY).stroke();
+        
+        for (let i = 0; i < daysInMonth; i++) {
+           // doc.moveTo(startX + nameWidth + (i * cellWidth), startY).lineTo(startX + nameWidth + (i * cellWidth), currentY).stroke();
+        }
+
+        doc.end();
+
+    } catch (e) {
+        console.error(e);
+        res.status(500).send("PDF Generation Failed");
     }
 });
 
@@ -619,6 +984,167 @@ app.get('/api/hr/payroll-summary', async (req, res) => {
     }
 });
 
+// HR: Manual Attendance Entry
+app.post('/api/hr/attendance/manual', async (req, res) => {
+    const { userId, date, status, inTime, outTime } = req.body;
+    try {
+        const targetDate = new Date(date);
+        
+        // Find existing record for this user & date
+        // Note: Check date range to span that specific day
+        const startOfDay = new Date(targetDate); startOfDay.setHours(0,0,0,0);
+        const endOfDay = new Date(targetDate); endOfDay.setHours(23,59,59,999);
+        
+        const existing = await prisma.attendance.findFirst({
+            where: {
+                userId,
+                date: { gte: startOfDay, lte: endOfDay }
+            }
+        });
+
+        // Calculate hours if times are provided
+        let workedHours = 0;
+        let ot = 0;
+        let inDate = null;
+        let outDate = null;
+
+        if (inTime && outTime) {
+            inDate = new Date(`${date}T${inTime}`);
+            outDate = new Date(`${date}T${outTime}`);
+            const diff = outDate - inDate;
+            workedHours = parseFloat((diff / (1000 * 60 * 60)).toFixed(2));
+            if (workedHours > 9) ot = parseFloat((workedHours - 9).toFixed(2));
+        } else if (inTime) {
+            inDate = new Date(`${date}T${inTime}`);
+        }
+
+        const data = {
+            userId,
+            date: targetDate,
+            status,
+            inTime: inDate,
+            outTime: outDate,
+            workedHours,
+            otHours: ot
+        };
+
+        if (existing) {
+            await prisma.attendance.update({ where: { id: existing.id }, data });
+        } else {
+            await prisma.attendance.create({ data });
+        }
+
+        res.json({ success: true });
+    } catch (e) {
+        console.error(e);
+        res.status(500).send("Update Failed");
+    }
+});
+
+// HR: Download Attendance Sheet PDF
+app.post('/api/hr/attendance-sheet/pdf', async (req, res) => {
+    const { month } = req.body; // YYYY-MM
+    try {
+        const [year, monthNum] = month.split('-');
+        const startDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
+        const endDate = new Date(parseInt(year), parseInt(monthNum), 0);
+        const daysInMonth = endDate.getDate();
+
+        // Fetch Data
+        const employees = await prisma.user.findMany({ 
+            where: { role: { in: ['worker', 'employee'] } },
+            orderBy: { name: 'asc' } 
+        });
+
+        const attendance = await prisma.attendance.findMany({
+            where: {
+                date: {
+                    gte: startDate,
+                    lte: new Date(endDate.setHours(23,59,59))
+                }
+            }
+        });
+
+        const doc = new PDFDocument({ margin: 20, layout: 'landscape', size: 'A3' }); // A3 for width
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=Attendance_${month}.pdf`);
+        doc.pipe(res);
+
+        doc.fontSize(18).text(`Attendance Sheet - ${new Date(startDate).toLocaleString('default', { month: 'long', year: 'numeric' })}`, { align: 'center' });
+        doc.moveDown();
+
+        const startX = 20;
+        const startY = 80;
+        const cellWidth = 25;
+        const nameWidth = 150;
+        const rowHeight = 20;
+
+        // Draw Header
+        doc.fontSize(8);
+        doc.text('Employee', startX, startY + 5);
+        
+        for (let i = 1; i <= daysInMonth; i++) {
+            doc.text(i.toString(), startX + nameWidth + ((i-1) * cellWidth) + 8, startY + 5);
+        }
+        
+        // Grid Lines (Header)
+        doc.rect(startX, startY, nameWidth + (daysInMonth * cellWidth), rowHeight).stroke();
+        
+        // Draw Rows
+        let currentY = startY + rowHeight;
+        employees.forEach(emp => {
+            if (currentY > 750) { // New Page
+                doc.addPage({ margin: 20, layout: 'landscape', size: 'A3' });
+                currentY = 40;
+            }
+
+            doc.text(emp.name, startX + 5, currentY + 5, { width: nameWidth - 5, ellipsis: true });
+            
+            for (let i = 1; i <= daysInMonth; i++) {
+                const dayDate = new Date(year, monthNum - 1, i);
+                const record = attendance.find(a => 
+                    a.userId === emp.id && 
+                    new Date(a.date).getDate() === i
+                );
+
+                let mark = '-';
+                if (record) {
+                    if (record.status === 'Present') mark = 'P';
+                    else if (record.status === 'Absent') mark = 'A';
+                    else if (record.status === 'Leave') mark = 'L';
+                    else if (record.status === 'Half Day') mark = 'HD';
+                }
+
+                // Highlight Color
+                if (mark === 'A') doc.fillColor('red');
+                else if (mark === 'L') doc.fillColor('blue');
+                else doc.fillColor('black');
+
+                doc.text(mark, startX + nameWidth + ((i-1) * cellWidth) + 8, currentY + 5);
+                doc.fillColor('black'); // Reset
+            }
+            
+            // Row Border
+            doc.rect(startX, currentY, nameWidth + (daysInMonth * cellWidth), rowHeight).stroke();
+            currentY += rowHeight;
+        });
+
+        // Vertical Lines for Matrix
+        // Left Border (Name)
+        // doc.moveTo(startX + nameWidth, startY).lineTo(startX + nameWidth, currentY).stroke();
+        
+        for (let i = 0; i < daysInMonth; i++) {
+           // doc.moveTo(startX + nameWidth + (i * cellWidth), startY).lineTo(startX + nameWidth + (i * cellWidth), currentY).stroke();
+        }
+
+        doc.end();
+
+    } catch (e) {
+        console.error(e);
+        res.status(500).send("PDF Generation Failed");
+    }
+});
+
 // HR: Get today's attendance for all employees
 app.get('/api/hr/attendance-today', async (req, res) => {
     try {
@@ -660,6 +1186,167 @@ app.get('/api/hr/attendance-today', async (req, res) => {
     } catch (e) {
         console.error(e);
         res.status(500).send("Error");
+    }
+});
+
+// HR: Manual Attendance Entry
+app.post('/api/hr/attendance/manual', async (req, res) => {
+    const { userId, date, status, inTime, outTime } = req.body;
+    try {
+        const targetDate = new Date(date);
+        
+        // Find existing record for this user & date
+        // Note: Check date range to span that specific day
+        const startOfDay = new Date(targetDate); startOfDay.setHours(0,0,0,0);
+        const endOfDay = new Date(targetDate); endOfDay.setHours(23,59,59,999);
+        
+        const existing = await prisma.attendance.findFirst({
+            where: {
+                userId,
+                date: { gte: startOfDay, lte: endOfDay }
+            }
+        });
+
+        // Calculate hours if times are provided
+        let workedHours = 0;
+        let ot = 0;
+        let inDate = null;
+        let outDate = null;
+
+        if (inTime && outTime) {
+            inDate = new Date(`${date}T${inTime}`);
+            outDate = new Date(`${date}T${outTime}`);
+            const diff = outDate - inDate;
+            workedHours = parseFloat((diff / (1000 * 60 * 60)).toFixed(2));
+            if (workedHours > 9) ot = parseFloat((workedHours - 9).toFixed(2));
+        } else if (inTime) {
+            inDate = new Date(`${date}T${inTime}`);
+        }
+
+        const data = {
+            userId,
+            date: targetDate,
+            status,
+            inTime: inDate,
+            outTime: outDate,
+            workedHours,
+            otHours: ot
+        };
+
+        if (existing) {
+            await prisma.attendance.update({ where: { id: existing.id }, data });
+        } else {
+            await prisma.attendance.create({ data });
+        }
+
+        res.json({ success: true });
+    } catch (e) {
+        console.error(e);
+        res.status(500).send("Update Failed");
+    }
+});
+
+// HR: Download Attendance Sheet PDF
+app.post('/api/hr/attendance-sheet/pdf', async (req, res) => {
+    const { month } = req.body; // YYYY-MM
+    try {
+        const [year, monthNum] = month.split('-');
+        const startDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
+        const endDate = new Date(parseInt(year), parseInt(monthNum), 0);
+        const daysInMonth = endDate.getDate();
+
+        // Fetch Data
+        const employees = await prisma.user.findMany({ 
+            where: { role: { in: ['worker', 'employee'] } },
+            orderBy: { name: 'asc' } 
+        });
+
+        const attendance = await prisma.attendance.findMany({
+            where: {
+                date: {
+                    gte: startDate,
+                    lte: new Date(endDate.setHours(23,59,59))
+                }
+            }
+        });
+
+        const doc = new PDFDocument({ margin: 20, layout: 'landscape', size: 'A3' }); // A3 for width
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=Attendance_${month}.pdf`);
+        doc.pipe(res);
+
+        doc.fontSize(18).text(`Attendance Sheet - ${new Date(startDate).toLocaleString('default', { month: 'long', year: 'numeric' })}`, { align: 'center' });
+        doc.moveDown();
+
+        const startX = 20;
+        const startY = 80;
+        const cellWidth = 25;
+        const nameWidth = 150;
+        const rowHeight = 20;
+
+        // Draw Header
+        doc.fontSize(8);
+        doc.text('Employee', startX, startY + 5);
+        
+        for (let i = 1; i <= daysInMonth; i++) {
+            doc.text(i.toString(), startX + nameWidth + ((i-1) * cellWidth) + 8, startY + 5);
+        }
+        
+        // Grid Lines (Header)
+        doc.rect(startX, startY, nameWidth + (daysInMonth * cellWidth), rowHeight).stroke();
+        
+        // Draw Rows
+        let currentY = startY + rowHeight;
+        employees.forEach(emp => {
+            if (currentY > 750) { // New Page
+                doc.addPage({ margin: 20, layout: 'landscape', size: 'A3' });
+                currentY = 40;
+            }
+
+            doc.text(emp.name, startX + 5, currentY + 5, { width: nameWidth - 5, ellipsis: true });
+            
+            for (let i = 1; i <= daysInMonth; i++) {
+                const dayDate = new Date(year, monthNum - 1, i);
+                const record = attendance.find(a => 
+                    a.userId === emp.id && 
+                    new Date(a.date).getDate() === i
+                );
+
+                let mark = '-';
+                if (record) {
+                    if (record.status === 'Present') mark = 'P';
+                    else if (record.status === 'Absent') mark = 'A';
+                    else if (record.status === 'Leave') mark = 'L';
+                    else if (record.status === 'Half Day') mark = 'HD';
+                }
+
+                // Highlight Color
+                if (mark === 'A') doc.fillColor('red');
+                else if (mark === 'L') doc.fillColor('blue');
+                else doc.fillColor('black');
+
+                doc.text(mark, startX + nameWidth + ((i-1) * cellWidth) + 8, currentY + 5);
+                doc.fillColor('black'); // Reset
+            }
+            
+            // Row Border
+            doc.rect(startX, currentY, nameWidth + (daysInMonth * cellWidth), rowHeight).stroke();
+            currentY += rowHeight;
+        });
+
+        // Vertical Lines for Matrix
+        // Left Border (Name)
+        // doc.moveTo(startX + nameWidth, startY).lineTo(startX + nameWidth, currentY).stroke();
+        
+        for (let i = 0; i < daysInMonth; i++) {
+           // doc.moveTo(startX + nameWidth + (i * cellWidth), startY).lineTo(startX + nameWidth + (i * cellWidth), currentY).stroke();
+        }
+
+        doc.end();
+
+    } catch (e) {
+        console.error(e);
+        res.status(500).send("PDF Generation Failed");
     }
 });
 
@@ -715,6 +1402,219 @@ app.get('/api/hr/attendance-history/:userId', async (req, res) => {
     } catch (e) {
         console.error(e);
         res.status(500).send("Error");
+    }
+});
+
+// HR: Manual Attendance Entry
+app.post('/api/hr/attendance/manual', async (req, res) => {
+    const { userId, date, status, inTime, outTime } = req.body;
+    try {
+        const targetDate = new Date(date);
+        
+        // Find existing record for this user & date
+        // Note: Check date range to span that specific day
+        const startOfDay = new Date(targetDate); startOfDay.setHours(0,0,0,0);
+        const endOfDay = new Date(targetDate); endOfDay.setHours(23,59,59,999);
+        
+        const existing = await prisma.attendance.findFirst({
+            where: {
+                userId,
+                date: { gte: startOfDay, lte: endOfDay }
+            }
+        });
+
+        // Calculate hours if times are provided
+        let workedHours = 0;
+        let ot = 0;
+        let inDate = null;
+        let outDate = null;
+
+        if (inTime && outTime) {
+            inDate = new Date(`${date}T${inTime}`);
+            outDate = new Date(`${date}T${outTime}`);
+            const diff = outDate - inDate;
+            workedHours = parseFloat((diff / (1000 * 60 * 60)).toFixed(2));
+            if (workedHours > 9) ot = parseFloat((workedHours - 9).toFixed(2));
+        } else if (inTime) {
+            inDate = new Date(`${date}T${inTime}`);
+        }
+
+        const data = {
+            userId,
+            date: targetDate,
+            status,
+            inTime: inDate,
+            outTime: outDate,
+            workedHours,
+            otHours: ot
+        };
+
+        if (existing) {
+            await prisma.attendance.update({ where: { id: existing.id }, data });
+        } else {
+            await prisma.attendance.create({ data });
+        }
+
+        res.json({ success: true });
+    } catch (e) {
+        console.error(e);
+        res.status(500).send("Update Failed");
+    }
+});
+
+// HR: Download Attendance Sheet PDF
+app.post('/api/hr/attendance-sheet/pdf', async (req, res) => {
+    const { month } = req.body; // YYYY-MM
+    try {
+        const [year, monthNum] = month.split('-');
+        const startDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
+        const endDate = new Date(parseInt(year), parseInt(monthNum), 0);
+        const daysInMonth = endDate.getDate();
+
+        // Fetch Data
+        const employees = await prisma.user.findMany({ 
+            where: { role: { in: ['worker', 'employee'] } },
+            orderBy: { name: 'asc' } 
+        });
+
+        const attendance = await prisma.attendance.findMany({
+            where: {
+                date: {
+                    gte: startDate,
+                    lte: new Date(endDate.setHours(23,59,59))
+                }
+            }
+        });
+
+        const doc = new PDFDocument({ margin: 20, layout: 'landscape', size: 'A3' }); // A3 for width
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=Attendance_${month}.pdf`);
+        doc.pipe(res);
+
+        doc.fontSize(18).text(`Attendance Sheet - ${new Date(startDate).toLocaleString('default', { month: 'long', year: 'numeric' })}`, { align: 'center' });
+        doc.moveDown();
+
+        const startX = 20;
+        const startY = 80;
+        const cellWidth = 25;
+        const nameWidth = 150;
+        const rowHeight = 20;
+
+        // Draw Header
+        doc.fontSize(8);
+        doc.text('Employee', startX, startY + 5);
+        
+        for (let i = 1; i <= daysInMonth; i++) {
+            doc.text(i.toString(), startX + nameWidth + ((i-1) * cellWidth) + 8, startY + 5);
+        }
+        
+        // Grid Lines (Header)
+        doc.rect(startX, startY, nameWidth + (daysInMonth * cellWidth), rowHeight).stroke();
+        
+        // Draw Rows
+        let currentY = startY + rowHeight;
+        employees.forEach(emp => {
+            if (currentY > 750) { // New Page
+                doc.addPage({ margin: 20, layout: 'landscape', size: 'A3' });
+                currentY = 40;
+            }
+
+            doc.text(emp.name, startX + 5, currentY + 5, { width: nameWidth - 5, ellipsis: true });
+            
+            for (let i = 1; i <= daysInMonth; i++) {
+                const dayDate = new Date(year, monthNum - 1, i);
+                const record = attendance.find(a => 
+                    a.userId === emp.id && 
+                    new Date(a.date).getDate() === i
+                );
+
+                let mark = '-';
+                if (record) {
+                    if (record.status === 'Present') mark = 'P';
+                    else if (record.status === 'Absent') mark = 'A';
+                    else if (record.status === 'Leave') mark = 'L';
+                    else if (record.status === 'Half Day') mark = 'HD';
+                }
+
+                // Highlight Color
+                if (mark === 'A') doc.fillColor('red');
+                else if (mark === 'L') doc.fillColor('blue');
+                else doc.fillColor('black');
+
+                doc.text(mark, startX + nameWidth + ((i-1) * cellWidth) + 8, currentY + 5);
+                doc.fillColor('black'); // Reset
+            }
+            
+            // Row Border
+            doc.rect(startX, currentY, nameWidth + (daysInMonth * cellWidth), rowHeight).stroke();
+            currentY += rowHeight;
+        });
+
+        // Vertical Lines for Matrix
+        // Left Border (Name)
+        // doc.moveTo(startX + nameWidth, startY).lineTo(startX + nameWidth, currentY).stroke();
+        
+        for (let i = 0; i < daysInMonth; i++) {
+           // doc.moveTo(startX + nameWidth + (i * cellWidth), startY).lineTo(startX + nameWidth + (i * cellWidth), currentY).stroke();
+        }
+
+        doc.end();
+
+    } catch (e) {
+        console.error(e);
+        res.status(500).send("PDF Generation Failed");
+    }
+});
+
+// --- COMPANY MANAGEMENT ---
+
+app.get('/api/company', async (req, res) => {
+    try {
+        // Assume single company for now
+        const company = await prisma.company.findFirst();
+        res.json(company || {});
+    } catch (e) {
+        console.error(e);
+        res.status(500).send("Error fetching company details");
+    }
+});
+
+app.post('/api/company', async (req, res) => {
+    const data = req.body;
+    try {
+        const existing = await prisma.company.findFirst();
+        
+        let company;
+        if (existing) {
+            company = await prisma.company.update({
+                where: { id: existing.id },
+                data: {
+                    name: data.name,
+                    address: data.address,
+                    phone: data.phone,
+                    email: data.email,
+                    website: data.website,
+                    taxId: data.taxId,
+                    logo: data.logo // Base64 string
+                }
+            });
+        } else {
+            company = await prisma.company.create({
+                data: {
+                    name: data.name,
+                    address: data.address,
+                    phone: data.phone,
+                    email: data.email,
+                    website: data.website,
+                    taxId: data.taxId,
+                    logo: data.logo
+                }
+            });
+        }
+        res.json({ success: true, company });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ success: false, message: "Failed to save company details" });
     }
 });
 

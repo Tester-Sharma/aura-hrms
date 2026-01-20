@@ -6,6 +6,7 @@ import HREmployees from './pages/hr/HREmployees';
 import HRLeaveApprovals from './pages/hr/HRLeaveApprovals';
 import HRPayroll from './pages/hr/HRPayroll';
 import HRAttendance from './pages/hr/HRAttendance';
+import HRCompanyProfile from './pages/hr/HRCompanyProfile';
 import Sidebar from './components/Sidebar';
 import Profile from './pages/Profile';
 
@@ -54,6 +55,10 @@ function HRApp() {
                         <Route
                             path="/payroll"
                             element={user ? <HRPayroll isDesktop={true} /> : <Navigate to="/hr/login" />}
+                        />
+                        <Route
+                            path="/company"
+                            element={user ? <HRCompanyProfile isDesktop={true} /> : <Navigate to="/hr/login" />}
                         />
                         <Route
                             path="/profile"

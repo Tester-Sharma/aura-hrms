@@ -10,6 +10,9 @@ const HRPayroll = () => {
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const [selectedMonth, setSelectedMonth] = useState(currentMonth);
 
+    // Manual Overrides State: { [userId]: days }
+    const [manualDays, setManualDays] = useState({});
+
     useEffect(() => {
         fetchPayroll();
     }, [selectedMonth]);
@@ -26,9 +29,53 @@ const HRPayroll = () => {
         }
     };
 
+    const handleDayChange = (userId, value) => {
+        setManualDays(prev => ({
+            ...prev,
+            [userId]: value
+        }));
+    };
+
+    const handleDownloadPayslip = async (userId) => {
+        try {
+            const days = manualDays[userId] || '';
+            await mockService.downloadPayslip(userId, selectedMonth, days);
+        } catch (e) {
+            alert('Failed to download payslip');
+        }
+    };
+
+    const handleExportReport = async () => {
+        try {
+            await mockService.downloadPayrollReport(selectedMonth, manualDays);
+        } catch (e) {
+            alert('Export failed');
+        }
+    };
+
+    const calculateDynamicPayout = (emp) => {
+        const days = manualDays[emp.id] ? parseFloat(manualDays[emp.id]) : null;
+        if (days === null) return emp.earnings;
+        
+        // Simple Ratio Calc
+        // Assuming original earnings were based on 26 days (standard) or fetched from attendance
+        // Since we don't have the full breakdown here, we approximate standard pro-rata
+        // Employee: Monthly Salary / 26 * days
+        // Worker: Hourly * 8 * days (Approximation for UI update)
+        
+        if (emp.role === 'worker') {
+            // We don't have hourly rate here easily without fetching detail, 
+            // but let's assume valid approximation from total / standard hours
+            // Or better, just ratio: (Earnings / 26) * Days
+             return Math.round((emp.earnings / 26) * days);
+        } else {
+             return Math.round((emp.earnings / 26) * days);
+        }
+    };
+
     if (isLoading && !summary) {
         return (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', color: '#94a3b8' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#94a3b8' }}>
                 <Loader2 className="animate-spin" size={32} color="var(--primary)" />
                 <p>Generating Financial Intelligence...</p>
             </div>
@@ -36,7 +83,8 @@ const HRPayroll = () => {
     }
 
     const employees = summary?.employees || [];
-    const totalPayroll = summary?.totalPayroll || 0;
+    // Recalculate total payroll based on overrides
+    const dynamicTotalPayroll = employees.reduce((sum, emp) => sum + calculateDynamicPayout(emp), 0);
 
     return (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', backgroundColor: 'var(--background)' }}>
@@ -58,7 +106,7 @@ const HRPayroll = () => {
                             <option value="2025-11" style={{ color: 'black' }}>November 2025</option>
                         </select>
                     </div>
-                    <button style={{ background: 'white', color: '#44337a', border: 'none', padding: '0 24px', borderRadius: '16px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                    <button onClick={handleExportReport} style={{ background: 'white', color: '#44337a', border: 'none', padding: '0 24px', borderRadius: '16px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
                         <Download size={18} />
                         <span>Export Fiscal Report</span>
                     </button>
@@ -79,7 +127,7 @@ const HRPayroll = () => {
                                     <span>Live</span>
                                 </div>
                             </div>
-                            <div style={{ fontSize: '2.8rem', fontWeight: 800 }}>₹{totalPayroll.toLocaleString()}</div>
+                            <div style={{ fontSize: '2.8rem', fontWeight: 800 }}>₹{dynamicTotalPayroll.toLocaleString()}</div>
                             <p style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.6)', marginTop: '10px', fontWeight: 600 }}>Calculated for {employees.length} active professionals</p>
                         </div>
 
@@ -92,7 +140,7 @@ const HRPayroll = () => {
                         <div style={{ background: 'white', padding: '30px', borderRadius: '32px', boxShadow: 'var(--shadow-sm)', border: '1px solid #f1f5f9' }}>
                             <span style={{ fontSize: '0.85rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase' }}>Avg Compensation</span>
                             <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--text-main)', margin: '8px 0' }}>
-                                ₹{employees.length > 0 ? Math.round(totalPayroll / employees.length).toLocaleString() : 0}
+                                ₹{employees.length > 0 ? Math.round(dynamicTotalPayroll / employees.length).toLocaleString() : 0}
                             </div>
                             <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>Per professional</div>
                         </div>
@@ -113,7 +161,9 @@ const HRPayroll = () => {
                                             <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9' }}>Professional</th>
                                             <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9' }}>Department</th>
                                             <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9' }}>Type</th>
+                                            <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9', width: '100px' }}>Days</th>
                                             <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9' }}>Total Payout</th>
+                                            <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9' }}>Slip</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -134,7 +184,21 @@ const HRPayroll = () => {
                                                     </span>
                                                 </td>
                                                 <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
-                                                    <span style={{ fontWeight: 800, color: 'var(--primary)', fontSize: '1rem' }}>₹{item.earnings.toLocaleString()}</span>
+                                                    <input 
+                                                        type="number"
+                                                        placeholder="26"
+                                                        value={manualDays[item.id] !== undefined ? manualDays[item.id] : 26}
+                                                        onChange={(e) => handleDayChange(item.id, e.target.value)}
+                                                        style={{ width: '50px', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontWeight: 600, textAlign: 'center' }}
+                                                    />
+                                                </td>
+                                                <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
+                                                    <span style={{ fontWeight: 800, color: 'var(--primary)', fontSize: '1rem' }}>₹{calculateDynamicPayout(item).toLocaleString()}</span>
+                                                </td>
+                                                <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
+                                                    <button onClick={() => handleDownloadPayslip(item.id)} style={{ background: '#f8fafc', border: 'none', padding: '8px', borderRadius: '8px', cursor: 'pointer', color: '#64748b' }} title="Generate Payslip">
+                                                        <FileText size={16} />
+                                                    </button>
                                                 </td>
                                             </tr>
                                         ))}
@@ -156,7 +220,7 @@ const HRPayroll = () => {
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f1f5f9' }}>
                                         <span style={{ fontSize: '0.9rem', fontWeight: 700, color:'#64748b' }}>Avg. Disbursement</span>
-                                        <span style={{ fontWeight: 800, color: 'var(--text-main)' }}>₹{employees.length > 0 ? Math.round(totalPayroll / employees.length).toLocaleString() : 0}</span>
+                                        <span style={{ fontWeight: 800, color: 'var(--text-main)' }}>₹{employees.length > 0 ? Math.round(dynamicTotalPayroll / employees.length).toLocaleString() : 0}</span>
                                    </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0' }}>
                                         <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#64748b' }}>Compliance Status</span>
@@ -170,7 +234,7 @@ const HRPayroll = () => {
 
                             <button style={{ height: '70px', background: '#10b981', color: 'white', border: 'none', borderRadius: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', fontWeight: 800, fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 10px 25px rgba(16, 185, 129, 0.2)' }}>
                                 <IndianRupee size={20} />
-                                <span>Authorize Batch Disbursement</span>
+                                <span style={{ textDecoration: 'line-through' }}>Authorize Batch Disbursement</span>
                             </button>
                         </section>
                     </div>

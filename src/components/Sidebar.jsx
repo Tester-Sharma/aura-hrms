@@ -44,7 +44,7 @@ const Sidebar = ({ user, onLogout }) => {
                         </NavLink>
                         <NavLink to="/hr/employees" className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
                             <User size={18} />
-                            <span>Talent Pool</span>
+                            <span>Employee Master</span>
                         </NavLink>
                         <NavLink to="/hr/attendance" className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
                             <Clock size={18} />
@@ -57,6 +57,10 @@ const Sidebar = ({ user, onLogout }) => {
                         <NavLink to="/hr/payroll" className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
                             <Factory size={18} />
                             <span>Financial Engine</span>
+                        </NavLink>
+                        <NavLink to="/hr/company" className={({ isActive }) => `sidebar-item ${isActive ? 'active' : ''}`}>
+                            <Factory size={18} />
+                            <span>Company Profile</span>
                         </NavLink>
                     </>
                 )}

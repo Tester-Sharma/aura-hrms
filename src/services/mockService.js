@@ -17,13 +17,19 @@ const request = async (endpoint, options = {}) => {
         };
 
         const response = await fetch(url, config);
-        const data = await response.json();
-
-        if (data && data.success === false) {
-            throw new Error(data.message || 'API Error');
+        
+        const contentType = response.headers.get("content-type");
+        if (contentType && contentType.indexOf("application/json") !== -1) {
+            const data = await response.json();
+            if (data && data.success === false) {
+                throw new Error(data.message || 'API Error');
+            }
+            return data;
+        } else {
+            const text = await response.text();
+            console.error(`API Error (${response.status}):`, text);
+            throw new Error(`API Request Failed: ${response.status} ${response.statusText}`);
         }
-
-        return data; // Return full response
     } catch (error) {
         throw error;
     }
@@ -95,9 +101,13 @@ const mockService = {
         return request(`/worker/profile?userId=${userId}`);
     },
 
-    downloadPayslip: async () => {
-        const userId = getUserId();
-        const response = await fetch(`${API_BASE_URL}/worker/download-payslip?userId=${userId}`, { cache: 'no-store' });
+    downloadPayslip: async (userId, month, overrideDays) => {
+        const targetUserId = userId || getUserId();
+        let query = `?userId=${targetUserId}`;
+        if (month) query += `&month=${month}`;
+        if (overrideDays) query += `&overrideDays=${overrideDays}`;
+
+        const response = await fetch(`${API_BASE_URL}/worker/download-payslip${query}`, { cache: 'no-store' });
         if (!response.ok) throw new Error('Download failed');
         const blob = await response.blob();
         
@@ -105,13 +115,11 @@ const mockService = {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `Payslip_${userId}.pdf`;
+        a.download = `Payslip_${targetUserId}.pdf`;
         document.body.appendChild(a);
         a.click();
         a.remove();
         window.URL.revokeObjectURL(url);
-        
-        return { success: true };
     },
 
     // --- HR PORTAL ---
@@ -138,6 +146,20 @@ const mockService = {
         return request('/hr/pending-leaves');
     },
 
+    downloadApplicationForm: async (userId) => {
+        const response = await fetch(`${API_BASE_URL}/hr/application-form/${userId}`, { cache: 'no-store' });
+        if (!response.ok) throw new Error('Download failed');
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Application_${userId}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+    },
+
     updateLeaveStatus: async (requestId, status) => {
         return request('/hr/update-leave-status', {
             method: 'POST',
@@ -155,6 +177,65 @@ const mockService = {
 
     getEmployeeAttendanceHistory: async (userId, month) => {
         return request(`/hr/attendance-history/${userId}?month=${month}`);
+    },
+
+    markManualAttendance: async (data) => {
+        return request('/hr/attendance/manual', {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+    },
+
+    downloadAttendanceSheet: async (month) => {
+        const response = await fetch(`${API_BASE_URL}/hr/attendance-sheet/pdf`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ month }),
+            cache: 'no-store'
+        });
+        if (!response.ok) throw new Error('Download failed');
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `Attendance_${month}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+    },
+
+    // --- COMPANY ---
+    getCompanyDetails: async () => {
+        return request('/company');
+    },
+
+    saveCompanyDetails: async (data) => {
+        return request('/company', {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+    },
+
+
+
+    downloadPayrollReport: async (month, overrides) => {
+        const response = await fetch(`${API_BASE_URL}/hr/salary-sheet/pdf`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ month, overrides }),
+            cache: 'no-store'
+        });
+        if (!response.ok) throw new Error('Download failed');
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `SalarySheet_${month}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
     }
 };
 

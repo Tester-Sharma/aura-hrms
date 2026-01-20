@@ -155,7 +155,6 @@ const Profile = ({ user: initialUser, onLogout, isDesktop }) => {
                 </div>
               )}
 
-              {user?.role !== 'worker' && (
               <button className="menu-item glass" onClick={handleDownloadPayslip} disabled={isDownloading}>
                 <div className="menu-left">
                   <div className="icon-box pdf">
@@ -168,7 +167,6 @@ const Profile = ({ user: initialUser, onLogout, isDesktop }) => {
                 </div>
                 <ChevronRight size={18} color="#94a3b8" />
               </button>
-              )}
 
               <div className="menu-group">
                 <button

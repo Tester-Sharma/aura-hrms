@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Search, Filter, MoreVertical, Edit2, ShieldAlert, BadgeCheck, Download, Plus, SearchCheck, X, Check, Calculator } from 'lucide-react';
+import { Users, Search, Filter, MoreVertical, Edit2, ShieldAlert, BadgeCheck, Download, Plus, SearchCheck, X, Check, Calculator, FileText } from 'lucide-react';
 import mockService from '../../services/mockService';
 
 const HREmployees = () => {
@@ -15,17 +15,19 @@ const HREmployees = () => {
     // Add Form State
     const [addFormStep, setAddFormStep] = useState(1);
     const [newEmployee, setNewEmployee] = useState({
-        name: '', email: '', phone: '', address: '',
+        name: '', email: '', phone: '', address: '', photo: '',
         type: 'Worker', department: 'Production', designation: 'Assembly Specialist',
         shift: '09:00 AM - 05:00 PM',
         salaryType: 'Hourly', // Hourly or Monthly
         baseRate: '' // Hourly Rate or CTC
     });
-
-    // Salary Calculator State
+    
+    // Salary Calculation State
     const [salaryBreakdown, setSalaryBreakdown] = useState(null);
     const [salaryOptions, setSalaryOptions] = useState({
-        includeHra: true, includePf: true, includePt: true
+        includeHra: true,
+        includePf: true,
+        includePt: true
     });
 
     useEffect(() => {
@@ -44,54 +46,77 @@ const HREmployees = () => {
         }
     };
 
-    const handleViewDetails = async (id) => {
-        try {
-            const emp = await mockService.getEmployeeDetails(id);
-            setSelectedEmployee(emp);
-            setShowDetailModal(true);
-        } catch (error) {
-            alert("Could not fetch details");
+    // Auto-Calculate Salary Breakdown
+    useEffect(() => {
+        if (!newEmployee.baseRate) {
+            setSalaryBreakdown(null);
+            return;
         }
-    };
 
-    const calculateSalary = () => {
-        const base = parseFloat(newEmployee.baseRate);
-        if (!base) return;
+        const rate = parseFloat(newEmployee.baseRate);
+        if (isNaN(rate)) return;
 
         if (newEmployee.type === 'Worker') {
-            setSalaryBreakdown({ type: 'Worker', hourlyRate: base });
+            setSalaryBreakdown({
+                hourlyRate: rate,
+                dailyEstimate: rate * 8,
+                monthlyEstimate: rate * 8 * 26
+            });
         } else {
-            // Simple logic for breakdown
-            // Assume Base is CTC Per Year for Employee
-            const monthlyCTC = base / 12;
+            // Employee Logic (CTC based)
+            const annualCTC = rate;
+            const monthlyCTC = annualCTC / 12;
+            
+            // Standard Indian Payroll Structure (Simplified)
+            // Basic is usually 40-50% of CTC. Let's say 50%
             const basic = monthlyCTC * 0.5;
-            const hra = salaryOptions.includeHra ? basic * 0.5 : 0;
-            const pf = salaryOptions.includePf ? basic * 0.12 : 0;
+            const hra = salaryOptions.includeHra ? (basic * 0.5) : 0; // HRA is 50% of Basic
+            
+            // Allowances fill the gap
+            // Gross = Basic + HRA + Allowances
+            // Let's assume Gross is close to Monthly CTC for simplicity, minus employer contribs if deep detail needed.
+            // For prototype: Gross = Monthly CTC.
+            
+            const specialAllowance = monthlyCTC - basic - hra;
+            
+            // Deductions
+            const pf = salaryOptions.includePf ? (basic * 0.12) : 0;
             const pt = salaryOptions.includePt ? 200 : 0;
-            const special = monthlyCTC - basic - hra - (salaryOptions.includePf ? basic * 0.12 : 0) // Just balancing
+            
+            const totalDeductions = pf + pt;
+            const netPayable = monthlyCTC - totalDeductions;
 
             setSalaryBreakdown({
-                type: 'Employee',
-                ctc: base,
-                monthlyCTC: monthlyCTC,
-                basic, hra, pf, pt,
-                specialAllowance: special > 0 ? special : 0,
-                netPayable: monthlyCTC - pf - pt
+                annualCTC,
+                monthlyCTC,
+                basic,
+                hra,
+                specialAllowance,
+                pf,
+                pt,
+                netPayable
             });
         }
-    };
+    }, [newEmployee.baseRate, newEmployee.type, salaryOptions]);
 
-    // Re-calc when options change
-    useEffect(() => {
-        if (addFormStep === 3) calculateSalary();
-    }, [salaryOptions, newEmployee.baseRate, newEmployee.type]);
+    const handlePhotoUpload = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                setNewEmployee(prev => ({ ...prev, photo: reader.result }));
+            };
+            reader.readAsDataURL(file);
+        }
+    };
 
     const handleRegister = async () => {
         try {
             const payload = { 
                 ...newEmployee, 
                 baseRate: parseFloat(newEmployee.baseRate),
-                salaryBreakdown: salaryBreakdown
+                salaryBreakdown: JSON.stringify(salaryBreakdown), // Store as string for flexibility
+                photo: newEmployee.photo
             };
             
             await mockService.registerEmployee(payload);
@@ -99,7 +124,7 @@ const HREmployees = () => {
             setShowAddModal(false);
             fetchEmployees();
             setAddFormStep(1);
-            setNewEmployee({ name: '', email: '', phone: '', address: '', type: 'Worker', department: 'Production', designation: '', shift: '09:00 AM - 05:00 PM', salaryType: 'Hourly', baseRate: '' });
+            setNewEmployee({ name: '', email: '', phone: '', address: '', photo: '', type: 'Worker', department: 'Production', designation: '', shift: '09:00 AM - 05:00 PM', salaryType: 'Hourly', baseRate: '' });
             alert('Employee registered successfully!');
         } catch (error) {
             console.error('Registration failed:', error);
@@ -107,48 +132,54 @@ const HREmployees = () => {
         }
     };
 
-    const filteredEmployees = employees.filter(emp =>
-        (emp.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (emp.id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (emp.department || '').toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const handleApplicationForm = async (userId) => {
+        try {
+            await mockService.downloadApplicationForm(userId);
+        } catch (error) {
+            alert("Failed to download application form");
+        }
+    };
 
-    if (isLoading && !employees.length) {
-        return <div className="loading-container">Loading...</div>;
-    }
+    const handleViewDetails = async (id) => {
+        // Implementation for view details could go here
+        // For now, simple console log or alert
+        console.log("View details for", id);
+    };
+
+    const filteredEmployees = employees.filter(emp => 
+        emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        emp.department?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        emp.id.toLowerCase().includes(searchTerm.toLowerCase())
+    );
 
     return (
         <div className="employees-container">
             <header className="hr-page-header">
                 <div className="header-content">
-                    <h1>Talent Pool</h1>
+                    <h1>Employee Master</h1>
                     <p>Orchestrating professional growth and resource allocation.</p>
                 </div>
                 <div className="header-actions">
-                    <button className="add-employee-btn" onClick={() => setShowAddModal(true)}>
+                    <div className="search-barrier">
+                        <Search size={18} color="#94a3b8" />
+                        <input 
+                            type="text" 
+                            placeholder="Search professionals..." 
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+                    <button className="add-employee-btn" onClick={() => setShowAddModal(true)} title="Add New Employee">
                         <Plus size={18} />
-                        <span>Onboard Professional</span>
-                    </button>
-                    <button className="export-btn">
-                        <Download size={18} />
+                        <span>Add Employee</span>
                     </button>
                 </div>
             </header>
 
             <main className="employees-content">
                 <div className="content-wrapper">
-                    <div className="directory-controls">
-                        <div className="search-barrier glass">
-                            <Search size={20} color="#94a3b8" />
-                            <input
-                                type="text"
-                                placeholder="Query by name, ID, or department..."
-                                value={searchTerm}
-                                onChange={(e) => setSearchTerm(e.target.value)}
-                            />
-                            {searchTerm && <button onClick={() => setSearchTerm('')} className="clear-search">×</button>}
-                        </div>
-                    </div>
+                    
+                    {/* Controls Row if needed, currently in header */}
 
                     <div className="table-wrapper glass">
                         <table className="aura-table">
@@ -169,7 +200,9 @@ const HREmployees = () => {
                                         <tr key={emp.id} className="fadeIn">
                                             <td>
                                                 <div className="prof-cell">
-                                                    <div className="prof-avatar">{emp.name?.[0] || 'U'}</div>
+                                                    <div className="prof-avatar" style={emp.photo ? { background: `url(${emp.photo}) center/cover` } : {}}>
+                                                        {!emp.photo && (emp.name?.[0] || 'U')}
+                                                    </div>
                                                     <div className="prof-info">
                                                         <span className="prof-name">{emp.name}</span>
                                                         <span className="prof-email">{emp.email || 'user@aura.inc'}</span>
@@ -180,7 +213,7 @@ const HREmployees = () => {
                                             <td><span className="dept-label">{emp.department || 'N/A'}</span></td>
                                             <td><span className="desig-label">{emp.designation || 'N/A'}</span></td>
                                             <td>
-                                                <span className={`class-tag ${emp.role || 'employee'}`}>
+                                            <span className={`class-tag ${emp.role || 'employee'}`}>
                                                     {emp.role === 'worker' ? <ShieldAlert size={12} /> : <BadgeCheck size={12} />}
                                                     {emp.role === 'worker' ? 'Worker' : emp.role === 'hr' ? 'HR' : 'Employee'}
                                                 </span>
@@ -196,7 +229,10 @@ const HREmployees = () => {
                                                 </div>
                                             </td>
                                             <td>
-                                                <div className="action-cluster">
+                                                <div className="action-cluster" style={{ display: 'flex', gap: '8px' }}>
+                                                    <button className="icon-btn" onClick={() => handleApplicationForm(emp.id)} title="Download App Form">
+                                                        <FileText size={16} />
+                                                    </button>
                                                     <button className="icon-btn" onClick={() => handleViewDetails(emp.id)} title="View Details">
                                                         <MoreVertical size={16} />
                                                     </button>
@@ -213,60 +249,42 @@ const HREmployees = () => {
                 </div>
             </main>
 
-            {/* View Details Modal */}
-            {showDetailModal && selectedEmployee && (
-                <div className="modal-overlay">
-                    <div className="modal-content large fadeIn">
-                        <div className="modal-header">
-                            <h2>Employee Profile</h2>
-                            <button className="close-btn" onClick={() => setShowDetailModal(false)}><X size={20} /></button>
-                        </div>
-                        <div className="detail-grid">
-                            <div className="detail-section">
-                                <h3>Personal Info</h3>
-                                <div className="info-row"><label>Name:</label> <span>{selectedEmployee.name}</span></div>
-                                <div className="info-row"><label>Email:</label> <span>{selectedEmployee.email}</span></div>
-                                <div className="info-row"><label>Phone:</label> <span>{selectedEmployee.phone}</span></div>
-                                <div className="info-row"><label>Address:</label> <span>{selectedEmployee.address}</span></div>
-                            </div>
-                            <div className="detail-section">
-                                <h3>Job Details</h3>
-                                <div className="info-row"><label>Department:</label> <span>{selectedEmployee.department}</span></div>
-                                <div className="info-row"><label>Designation:</label> <span>{selectedEmployee.designation}</span></div>
-                                <div className="info-row"><label>Shift:</label> <span>{selectedEmployee.shift}</span></div>
-                                <div className="info-row"><label>Joining Date:</label> <span>{selectedEmployee.joiningDate}</span></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
             {/* Add Employee Modal */}
             {showAddModal && (
                 <div className="modal-overlay">
                     <div className="modal-content large fadeIn">
                         <div className="modal-header">
-                            <h2>Onboard Professional</h2>
+                            <h2>Add New Employee</h2>
                             <button className="close-btn" onClick={() => setShowAddModal(false)}><X size={20} /></button>
                         </div>
-
+                        
                         <div className="step-indicator">
-                            <div className={`step ${addFormStep >= 1 ? 'active' : ''}`}>1. Personal</div>
-                            <div className="step-line"></div>
-                            <div className={`step ${addFormStep >= 2 ? 'active' : ''}`}>2. Job</div>
-                            <div className="step-line"></div>
-                            <div className={`step ${addFormStep >= 3 ? 'active' : ''}`}>3. Salary</div>
+                            <span className={`step ${addFormStep >= 1 ? 'active' : ''}`}>1. Identity</span>
+                            <div className="step-line" />
+                            <span className={`step ${addFormStep >= 2 ? 'active' : ''}`}>2. Position</span>
+                            <div className="step-line" />
+                            <span className={`step ${addFormStep >= 3 ? 'active' : ''}`}>3. Payroll</span>
                         </div>
 
                         <div className="modal-body">
                             {addFormStep === 1 && (
                                 <div className="form-grid">
+                                    <div style={{ gridColumn: 'span 2', display: 'flex', gap: '20px', alignItems: 'center' }}>
+                                        <div style={{ width: '80px', height: '80px', borderRadius: '12px', background: newEmployee.photo ? `url(${newEmployee.photo}) center/cover` : '#f1f5f9', border: '2px dashed #cbd5e1', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                                            {!newEmployee.photo && <Users size={24} color="#94a3b8" />}
+                                        </div>
+                                        <div>
+                                            <label style={{ display: 'block', fontWeight: 700, marginBottom: '8px', color: '#64748b' }}>Employee Photo</label>
+                                            <input type="file" accept="image/*" onChange={handlePhotoUpload} style={{ border: 'none', padding: 0 }} />
+                                        </div>
+                                    </div>
                                     <input placeholder="Full Name" value={newEmployee.name} onChange={e => setNewEmployee({ ...newEmployee, name: e.target.value })} />
                                     <input placeholder="Email" value={newEmployee.email} onChange={e => setNewEmployee({ ...newEmployee, email: e.target.value })} />
                                     <input placeholder="Phone" value={newEmployee.phone} onChange={e => setNewEmployee({ ...newEmployee, phone: e.target.value })} />
                                     <textarea placeholder="Address" value={newEmployee.address} onChange={e => setNewEmployee({ ...newEmployee, address: e.target.value })} />
                                 </div>
                             )}
+
                             {addFormStep === 2 && (
                                 <div className="form-grid">
                                     <select value={newEmployee.type} onChange={e => setNewEmployee({ ...newEmployee, type: e.target.value })}>
@@ -292,9 +310,9 @@ const HREmployees = () => {
 
                                     {newEmployee.type === 'Employee' && (
                                         <div className="calc-options">
-                                            <label><input type="checkbox" checked={salaryOptions.includeHra} onChange={e => setSalaryOptions({ ...salaryOptions, includeHra: e.target.checked })} /> Include HRA (50% Basic)</label>
-                                            <label><input type="checkbox" checked={salaryOptions.includePf} onChange={e => setSalaryOptions({ ...salaryOptions, includePf: e.target.checked })} /> PF Deduction</label>
-                                            <label><input type="checkbox" checked={salaryOptions.includePt} onChange={e => setSalaryOptions({ ...salaryOptions, includePt: e.target.checked })} /> Professional Tax</label>
+                                            <label style={{ display: 'flex', gap: '8px', cursor: 'pointer' }}><input type="checkbox" checked={salaryOptions.includeHra} onChange={e => setSalaryOptions({ ...salaryOptions, includeHra: e.target.checked })} /> Include HRA (50% Basic)</label>
+                                            <label style={{ display: 'flex', gap: '8px', cursor: 'pointer' }}><input type="checkbox" checked={salaryOptions.includePf} onChange={e => setSalaryOptions({ ...salaryOptions, includePf: e.target.checked })} /> PF Deduction</label>
+                                            <label style={{ display: 'flex', gap: '8px', cursor: 'pointer' }}><input type="checkbox" checked={salaryOptions.includePt} onChange={e => setSalaryOptions({ ...salaryOptions, includePt: e.target.checked })} /> Professional Tax</label>
                                         </div>
                                     )}
 
@@ -334,13 +352,14 @@ const HREmployees = () => {
                 .employees-container { flex: 1; display: flex; flex-direction: column; background-color: var(--background); }
                 .hr-page-header { padding: 40px; background: linear-gradient(135deg, var(--primary-dark) 0%, #312e81 100%); color: white; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow-md); }
                 .header-content h1 { font-size: 2.5rem; font-weight: 800; }
-                .add-employee-btn { background: white; color: var(--primary-dark); border: none; padding: 12px 24px; border-radius: 16px; font-weight: 800; display: flex; align-items: center; gap: 10px; cursor: pointer; }
+                .header-actions { display: flex; gap: 16px; align-items: center; }
+                .add-employee-btn { background: white; color: var(--primary-dark); border: none; padding: 12px 24px; border-radius: 16px; font-weight: 800; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: transform 0.2s; }
+                .add-employee-btn:hover { transform: scale(1.05); }
                 .employees-content { flex: 1; overflow-y: auto; padding-top: 40px; }
                 .content-wrapper { max-width: 1400px; margin: 0 auto; padding: 0 40px 60px; display: flex; flex-direction: column; gap: 32px; }
-                .directory-controls { display: flex; gap: 24px; }
-                .search-barrier { flex: 1; background: white; padding: 0 20px; border-radius: 20px; display: flex; align-items: center; gap: 14px; border: 1px solid #f1f5f9; }
-                .search-barrier input { border: none; height: 56px; outline: none; width: 100%; font-size: 1rem; }
-                .table-wrapper { background: white; border-radius: 32px; overflow: hidden; border: 1px solid #f1f5f9; }
+                .search-barrier { background: white; padding: 0 20px; border-radius: 16px; display: flex; align-items: center; gap: 14px; border: 1px solid rgba(255,255,255,0.2); width: 300px; height: 50px; }
+                .search-barrier input { border: none; height: 100%; outline: none; width: 100%; font-size: 0.95rem; font-weight: 600; color: #475569; }
+                .table-wrapper { background: white; border-radius: 32px; overflow: hidden; border: 1px solid #f1f5f9; box-shadow: var(--shadow-sm); }
                 .aura-table { width: 100%; border-collapse: collapse; text-align: left; }
                 .aura-table th { background: #f8fafc; padding: 20px 24px; font-size: 0.75rem; font-weight: 800; color: #94a3b8; text-transform: uppercase; }
                 .aura-table td { padding: 20px 24px; border-bottom: 1px solid #f1f5f9; }
@@ -356,16 +375,12 @@ const HREmployees = () => {
                 .modal-content.large { width: 700px; }
                 .modal-header { display: flex; justify-content: space-between; align-items: center; }
                 .close-btn { background: none; border: none; cursor: pointer; color: #94a3b8; }
-                .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
-                .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed #e2e8f0; }
-                .info-row label { font-weight: 700; color: #64748b; } .info-row span { font-weight: 600; color: var(--text-main); }
-                
                 .step-indicator { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-                .step { font-weight: 800; color: #cbd5e1; } .step.active { color: var(--primary); }
+                .step { font-weight: 800; color: #cbd5e1; font-size: 0.9rem; } .step.active { color: var(--primary); }
                 .step-line { flex: 1; height: 2px; background: #e2e8f0; margin: 0 16px; }
                 
                 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-                .form-grid input, .form-grid select, .form-grid textarea { padding: 12px; border-radius: 12px; border: 1px solid #e2e8f0; width: 100%; outline: none; }
+                .form-grid input, .form-grid select, .form-grid textarea { padding: 12px; border-radius: 12px; border: 1px solid #e2e8f0; width: 100%; outline: none; font-family: inherit; }
                 .form-grid textarea { grid-column: span 2; }
                 
                 .salary-calculator { background: #f8fafc; padding: 24px; border-radius: 16px; }
@@ -380,6 +395,9 @@ const HREmployees = () => {
                 
                 .fadeIn { animation: fadeIn 0.3s ease-out; }
                 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+                
+                .icon-btn { background: #f8fafc; border: none; padding: 8px; border-radius: 8px; cursor: pointer; color: #64748b; transition: all 0.2s; }
+                .icon-btn:hover { background: #e2e8f0; color: var(--primary); }
             `}</style>
         </div>
     );
