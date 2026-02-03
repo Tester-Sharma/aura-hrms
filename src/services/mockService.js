@@ -244,6 +244,18 @@ const mockService = {
         a.click();
         a.remove();
         window.URL.revokeObjectURL(url);
+    },
+
+    // Payroll Record CRUD
+    getPayrollRecord: async (userId, month) => {
+        return request(`/hr/payroll-record?userId=${userId}&month=${month}`);
+    },
+
+    savePayrollRecord: async (data) => {
+        return request('/hr/payroll-record', {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
     }
 };
 

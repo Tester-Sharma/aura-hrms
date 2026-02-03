@@ -435,83 +435,243 @@ app.post('/api/hr/salary-sheet/pdf', async (req, res) => {
             orderBy: { name: 'asc' }
         });
         const company = await prisma.company.findFirst();
+        
+        // Fetch any saved payroll records for this month
+        const payrollRecords = await prisma.payrollRecord.findMany({
+            where: { month }
+        });
+        const payrollMap = {};
+        payrollRecords.forEach(pr => { payrollMap[pr.userId] = pr; });
 
-        const doc = new PDFDocument({ margin: 30, layout: 'landscape' });
+        const doc = new PDFDocument({ margin: 20, layout: 'landscape', size: 'A4' });
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename=SalarySheet_${month}.pdf`);
         doc.pipe(res);
 
-        doc.fontSize(18).text(`${company?.name || 'AURA'} - Salary Sheet (${month})`, { align: 'center' });
-        doc.moveDown();
+        // --- CONSTANTS ---
+        const THEME_COLOR = '#6200EA';
+        const [year, monthNum] = month.split('-');
+        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const monthName = monthNames[parseInt(monthNum) - 1] || month;
 
-        // Table Header
-        const startX = 30;
-        let y = 100;
-        doc.fontSize(9).font('Helvetica-Bold');
+        // --- HEADER ---
+        // Top Info Row
+        doc.fontSize(7).font('Helvetica').fillColor('black');
+        doc.text(`[rule 78 (1) (a) (i)]`, 20, 20);
+        doc.text(`Register of Wages Form No. 27 (1)`, 650, 20, { width: 150, align: 'right' });
+        doc.text(`Page 1`, 750, 30, { width: 50, align: 'right' });
         
-        const cols = [
-            { name: 'ID', w: 50 },
-            { name: 'Name', w: 120 },
-            { name: 'Role', w: 60 },
-            { name: 'Days', w: 40 },
-            { name: 'Basic', w: 70 },
-            { name: 'HRA', w: 70 },
-            { name: 'Special', w: 70 },
-            { name: 'Gross', w: 80 },
-            { name: 'Deductions', w: 70 },
-            { name: 'Net Pay', w: 80 }
-        ];
+        doc.fontSize(8).font('Helvetica-Bold');
+        doc.text(`P.F.Code : ${company?.taxId || 'XXXXXXXXXX'}`, 20, 35);
+        doc.text(`MonthDays    26`, 700, 35, { width: 100, align: 'right' });
+        
+        // Company Name (Center, Large)
+        doc.fontSize(14).font('Helvetica-Bold').fillColor(THEME_COLOR);
+        doc.text(`${company?.name || 'AURA TEXTILES PRIVATE LIMITED'}`, 20, 50, { width: 800, align: 'center' });
+        
+        doc.fontSize(8).font('Helvetica').fillColor('black');
+        doc.text(`ESI Code : ${company?.email || 'XXXXXXXXXX'}`, 20, 48);
+        
+        // Address Line
+        doc.fontSize(7).text(`${company?.address || 'PLOT NO. XXX, INDUSTRIAL AREA, GROWTH CENTRE, DISTRICT'}`, 20, 70, { width: 800, align: 'center' });
+        
+        // Month Header
+        doc.fontSize(10).font('Helvetica-Bold').text(`FOR THE MONTH ${monthName.toUpperCase()} ${year}`, 20, 85, { width: 800, align: 'center' });
 
+        // --- TABLE HEADER ---
+        let y = 105;
+        const startX = 20;
+        
+        // Column widths
+        // Column widths optimized for A4 Landscape (total ~760px)
+        const cols = [
+            { name: 'S.No', w: 22 },
+            { name: 'NAME / FATHER NAME\nP.F.NO. / ESI NO.\nUAN No.', w: 100 },
+            { name: 'DESIG.', w: 45 },
+            { name: 'SALARY\nRATE', w: 42 },
+            { name: 'DAYS\n/HRS', w: 28 },
+            // Earnings
+            { name: 'SALARY', w: 45 },
+            { name: 'H.R.A', w: 40 },
+            { name: 'CONV.', w: 38 },
+            { name: 'OTHER', w: 38 },
+            { name: 'TOTAL', w: 48 },
+            // Deductions
+            { name: 'P.F.', w: 38 },
+            { name: 'E.S.I.', w: 38 },
+            { name: 'Advance', w: 40 },
+            { name: 'Other', w: 35 },
+            { name: 'TDS', w: 32 },
+            { name: 'TOTAL', w: 45 },
+            // Net
+            { name: 'NET PAYABLE\nAMOUNT', w: 55 },
+            { name: 'SIGN.', w: 35 }
+        ];
+        
+        // Draw header row background
+        const totalWidth = cols.reduce((sum, c) => sum + c.w, 0);
+        doc.rect(startX, y, totalWidth, 35).fillAndStroke('#f3e8ff', '#CBD5E1');
+        
+        // Earnings/Deductions group headers
+        doc.fontSize(7).font('Helvetica-Bold').fillColor(THEME_COLOR);
+        doc.text('[--------E A R N I N G S--------]', 255, y + 2, { width: 210, align: 'center' });
+        doc.text('[-------- DEDUCTIONS --------]', 465, y + 2, { width: 230, align: 'center' });
+        
+        y += 12;
         let x = startX;
+        doc.fontSize(6).font('Helvetica-Bold').fillColor('black');
         cols.forEach(c => {
-            doc.text(c.name, x, y);
+            doc.text(c.name, x + 2, y, { width: c.w - 4, align: 'center' });
             x += c.w;
         });
         
-        y += 15;
-        doc.moveTo(startX, y).lineTo(x, y).stroke();
-        y += 10;
-        doc.font('Helvetica');
+        y += 25;
+        doc.moveTo(startX, y).lineTo(800 - 20, y).strokeColor('#CBD5E1').stroke();
+        y += 5;
 
-        // Rows
+        // --- DATA ROWS ---
+        doc.font('Helvetica').fontSize(7);
+        let sno = 1;
+        
         users.forEach(u => {
-             if (y > 500) { doc.addPage({ layout: 'landscape' }); y = 50; }
+            if (y > 520) { 
+                doc.addPage({ layout: 'landscape', size: 'A4' }); 
+                y = 30; 
+            }
 
-             // Calc
-             let salary = {};
-             try { salary = JSON.parse(u.salaryBreakdown || '{}'); } catch(e) {}
-             
-             const days = overrides?.[u.id] ? parseFloat(overrides[u.id]) : 26;
-             const ratio = days / 26;
+            // Check if there's a saved payroll record
+            const pr = payrollMap[u.id];
+            
+            // Calculate salary components
+            let salary = {};
+            try { salary = JSON.parse(u.salaryBreakdown || '{}'); } catch(e) {}
+            
+            const days = pr?.daysWorked || (overrides?.[u.id] ? parseFloat(overrides[u.id]) : 26);
+            const ratio = days / 26;
 
-             let basic = 0, hra = 0, special = 0;
-             if (u.role === 'employee') {
-                 basic = (salary.basic || 0) * ratio;
-                 hra = (salary.hra || 0) * ratio;
-                 special = (salary.specialAllowance || 0) * ratio;
-             } else {
-                 basic = days * 8 * (u.hourlyRate || 0); // Worker assumption
-             }
-             
-             const gross = basic + hra + special;
-             const ded = (salary.pf || 0) + (salary.pt || 0);
-             const net = gross - ded;
+            let basic, hra, conv, other, grossEarnings;
+            let pfDed, esiDed, advanceDed, otherDed, tdsDed, totalDed, netPay;
+            let salaryRate = 0;
 
-             let cx = startX;
-             doc.text(u.id, cx, y, { width: 50 }); cx += 50;
-             doc.text(u.name, cx, y, { width: 120, ellipsis: true }); cx += 120;
-             doc.text(u.role, cx, y, { width: 60 }); cx += 60;
-             doc.text(days.toString(), cx, y, { width: 40 }); cx += 40;
-             doc.text(Math.round(basic).toString(), cx, y, { width: 60 }); cx += 70;
-             doc.text(Math.round(hra).toString(), cx, y, { width: 60 }); cx += 70;
-             doc.text(Math.round(special).toString(), cx, y, { width: 60 }); cx += 70;
-             doc.font('Helvetica-Bold').text(Math.round(gross).toString(), cx, y, { width: 70 }); cx += 80;
-             doc.font('Helvetica').text(Math.round(ded).toString(), cx, y, { width: 60 }); cx += 70;
-             doc.font('Helvetica-Bold').text(Math.round(net).toString(), cx, y, { width: 70 });
-             
-             y += 20;
-             doc.font('Helvetica');
+            if (pr) {
+                // Use saved payroll record
+                basic = pr.basic;
+                hra = pr.hra;
+                conv = pr.conveyance;
+                other = pr.otherEarnings;
+                grossEarnings = pr.grossEarnings;
+                pfDed = pr.pf;
+                esiDed = pr.esi;
+                advanceDed = pr.advance;
+                otherDed = pr.otherDeductions;
+                tdsDed = pr.tds;
+                totalDed = pr.totalDeductions;
+                netPay = pr.netPayable;
+                salaryRate = Math.round((basic / ratio) || 0);
+            } else {
+                // Calculate from user data
+                if (u.role === 'employee') {
+                    // Auto-split: 50% Basic, 30% HRA, 10% Conv, 10% Other
+                    const monthlySalary = salary.basic ? (salary.basic + (salary.hra || 0) + (salary.specialAllowance || 0)) : (u.monthlySalary || 0);
+                    salaryRate = monthlySalary;
+                    basic = Math.round(monthlySalary * 0.5 * ratio);
+                    hra = Math.round(monthlySalary * 0.3 * ratio);
+                    conv = Math.round(monthlySalary * 0.1 * ratio);
+                    other = Math.round(monthlySalary * 0.1 * ratio);
+                } else {
+                    // Worker: hourly rate * 8 hours * days
+                    basic = Math.round(days * 8 * (u.hourlyRate || 0));
+                    salaryRate = (u.hourlyRate || 0) * 8 * 26;
+                    hra = 0;
+                    conv = 0;
+                    other = 0;
+                }
+                grossEarnings = basic + hra + conv + other;
+                
+                // Deductions
+                pfDed = u.epfoEnabled ? Math.round(basic * 0.12) : 0;
+                esiDed = u.esicEnabled ? Math.round(grossEarnings * 0.0075) : 0;
+                advanceDed = u.advanceAmount || 0;
+                otherDed = 0;
+                tdsDed = u.tdsEnabled ? Math.round(grossEarnings * 0.1) : 0; // 10% TDS if enabled
+                totalDed = pfDed + esiDed + advanceDed + otherDed + tdsDed;
+                netPay = grossEarnings - totalDed;
+            }
+
+            // Row background (alternating)
+            if (sno % 2 === 0) {
+                doc.rect(startX, y - 2, totalWidth, 38).fill('#fafafa');
+            }
+            
+            let cx = startX;
+            doc.fillColor('black');
+            
+            // S.No
+            doc.text(sno.toString(), cx, y + 10, { width: cols[0].w, align: 'center' });
+            cx += cols[0].w;
+            
+            // Name Block (multi-line)
+            doc.font('Helvetica-Bold').fontSize(7).text(u.name?.toUpperCase() || '-', cx, y, { width: cols[1].w - 4 });
+            doc.font('Helvetica').fontSize(6).text(`S/o ${u.fatherName?.toUpperCase() || 'N/A'}`, cx, y + 10, { width: cols[1].w - 4 });
+            doc.text(`${u.epfoNumber || 'XXXXXXXX'}`, cx, y + 18, { width: cols[1].w - 4 });
+            doc.text(`UAN No. ${u.epfoNumber || 'XXXXXXXXXX'}`, cx, y + 26, { width: cols[1].w - 4 });
+            cx += cols[1].w;
+            
+            // Designation
+            doc.fontSize(6).text(u.designation?.toUpperCase() || '-', cx, y + 10, { width: cols[2].w - 4 });
+            cx += cols[2].w;
+            
+            // Salary Rate
+            doc.fontSize(7).text(Math.round(salaryRate).toLocaleString(), cx, y + 5, { width: cols[3].w - 4, align: 'right' });
+            cx += cols[3].w;
+            
+            // Days
+            doc.text(days.toString(), cx, y + 10, { width: cols[4].w - 4, align: 'center' });
+            cx += cols[4].w;
+            
+            // Earnings
+            doc.text(Math.round(basic).toLocaleString(), cx, y + 10, { width: cols[5].w - 4, align: 'right' });
+            cx += cols[5].w;
+            doc.text(Math.round(hra).toLocaleString(), cx, y + 10, { width: cols[6].w - 4, align: 'right' });
+            cx += cols[6].w;
+            doc.text(Math.round(conv).toLocaleString(), cx, y + 10, { width: cols[7].w - 4, align: 'right' });
+            cx += cols[7].w;
+            doc.text(Math.round(other).toLocaleString(), cx, y + 10, { width: cols[8].w - 4, align: 'right' });
+            cx += cols[8].w;
+            doc.font('Helvetica-Bold').text(Math.round(grossEarnings).toLocaleString(), cx, y + 10, { width: cols[9].w - 4, align: 'right' });
+            cx += cols[9].w;
+            
+            // Deductions
+            doc.font('Helvetica').text(Math.round(pfDed).toLocaleString(), cx, y + 10, { width: cols[10].w - 4, align: 'right' });
+            cx += cols[10].w;
+            doc.text(Math.round(esiDed).toLocaleString(), cx, y + 10, { width: cols[11].w - 4, align: 'right' });
+            cx += cols[11].w;
+            doc.text(Math.round(advanceDed).toLocaleString(), cx, y + 10, { width: cols[12].w - 4, align: 'right' });
+            cx += cols[12].w;
+            doc.text(Math.round(otherDed).toLocaleString(), cx, y + 10, { width: cols[13].w - 4, align: 'right' });
+            cx += cols[13].w;
+            doc.text(Math.round(tdsDed).toLocaleString(), cx, y + 10, { width: cols[14].w - 4, align: 'right' });
+            cx += cols[14].w;
+            doc.font('Helvetica-Bold').text(Math.round(totalDed).toLocaleString(), cx, y + 10, { width: cols[15].w - 4, align: 'right' });
+            cx += cols[15].w;
+            
+            // Net Payable
+            doc.fillColor(THEME_COLOR).text(Math.round(netPay).toLocaleString(), cx, y + 10, { width: cols[16].w - 4, align: 'right' });
+            cx += cols[16].w;
+            
+            // Signature (empty)
+            doc.fillColor('black').text('', cx, y + 10, { width: cols[17].w - 4 });
+            
+            // Row separator
+            doc.moveTo(startX, y + 38).lineTo(startX + totalWidth, y + 38).strokeColor('#e2e8f0').stroke();
+            
+            y += 40;
+            sno++;
         });
+
+        // Footer - System Generated Notice
+        doc.fontSize(8).font('Helvetica-Oblique').fillColor('#64748B');
+        doc.text('This is a system generated salary sheet and does not require a signature.', startX, y + 20, { width: totalWidth, align: 'center' });
 
         doc.end();
     } catch(e) {
@@ -519,6 +679,74 @@ app.post('/api/hr/salary-sheet/pdf', async (req, res) => {
         res.status(500).send("Error");
     }
 });
+
+// --- PAYROLL RECORD CRUD ---
+// Get payroll record for a user/month
+app.get('/api/hr/payroll-record', async (req, res) => {
+    const { userId, month } = req.query;
+    try {
+        const record = await prisma.payrollRecord.findUnique({
+            where: { userId_month: { userId, month } }
+        });
+        res.json(record || null);
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Failed to fetch payroll record' });
+    }
+});
+
+// Save/Update payroll record
+app.post('/api/hr/payroll-record', async (req, res) => {
+    const data = req.body;
+    try {
+        // Calculate totals
+        const grossEarnings = (data.basic || 0) + (data.hra || 0) + (data.conveyance || 0) + (data.otherEarnings || 0);
+        const totalDeductions = (data.pf || 0) + (data.esi || 0) + (data.advance || 0) + (data.tds || 0) + (data.otherDeductions || 0);
+        const netPayable = grossEarnings - totalDeductions;
+        
+        const record = await prisma.payrollRecord.upsert({
+            where: { userId_month: { userId: data.userId, month: data.month } },
+            update: {
+                daysWorked: data.daysWorked || 26,
+                basic: data.basic || 0,
+                hra: data.hra || 0,
+                conveyance: data.conveyance || 0,
+                otherEarnings: data.otherEarnings || 0,
+                grossEarnings,
+                pf: data.pf || 0,
+                esi: data.esi || 0,
+                advance: data.advance || 0,
+                tds: data.tds || 0,
+                otherDeductions: data.otherDeductions || 0,
+                totalDeductions,
+                netPayable
+            },
+            create: {
+                userId: data.userId,
+                month: data.month,
+                daysWorked: data.daysWorked || 26,
+                basic: data.basic || 0,
+                hra: data.hra || 0,
+                conveyance: data.conveyance || 0,
+                otherEarnings: data.otherEarnings || 0,
+                grossEarnings,
+                pf: data.pf || 0,
+                esi: data.esi || 0,
+                advance: data.advance || 0,
+                tds: data.tds || 0,
+                otherDeductions: data.otherDeductions || 0,
+                totalDeductions,
+                netPayable
+            }
+        });
+        res.json({ success: true, record });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: 'Failed to save payroll record' });
+    }
+});
+
+
 
 app.post('/api/worker/apply-leave', async (req, res) => {
     try {

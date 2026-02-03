@@ -11,6 +11,7 @@ model User {
   id              String   @id // W-1001, E-101, H-101
   password        String   @default("12345")
   name            String
+  fatherName      String?  // For Salary Register Form 27(1)
   role            String   // 'worker', 'employee', 'hr'
   designation     String?
   department      String?
@@ -94,3 +95,37 @@ model LeaveRequest {
   userId      String
   user        User     @relation(fields: [userId], references: [id])
 }
+
+// Monthly Payroll Record for Edit Functionality
+model PayrollRecord {
+  id              String   @id @default(uuid())
+  userId          String
+  month           String   // Format: "2026-01"
+  
+  // Working Days
+  daysWorked      Float    @default(26)
+  
+  // Earnings
+  basic           Float    @default(0)
+  hra             Float    @default(0)
+  conveyance      Float    @default(0)
+  otherEarnings   Float    @default(0)
+  grossEarnings   Float    @default(0)
+  
+  // Deductions
+  pf              Float    @default(0)
+  esi             Float    @default(0)
+  advance         Float    @default(0)
+  tds             Float    @default(0)
+  otherDeductions Float    @default(0)
+  totalDeductions Float    @default(0)
+  
+  // Net
+  netPayable      Float    @default(0)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@unique([userId, month])
+}
+

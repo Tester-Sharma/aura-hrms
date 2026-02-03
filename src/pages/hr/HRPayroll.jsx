@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download, FileText, IndianRupee, PieChart, TrendingUp, Users, Loader2, Calendar, Filter, ArrowUpRight, ShieldCheck, Wallet } from 'lucide-react';
+import { Download, FileText, IndianRupee, PieChart, TrendingUp, Users, Loader2, Calendar, Filter, ArrowUpRight, ShieldCheck, Wallet, Pencil, X, Save } from 'lucide-react';
 import mockService from '../../services/mockService';
 
 const HRPayroll = () => {
@@ -12,6 +12,23 @@ const HRPayroll = () => {
 
     // Manual Overrides State: { [userId]: days }
     const [manualDays, setManualDays] = useState({});
+
+    // Edit Salary Modal State
+    const [editModal, setEditModal] = useState(false);
+    const [editingEmployee, setEditingEmployee] = useState(null);
+    const [salaryData, setSalaryData] = useState({
+        daysWorked: 26,
+        basic: 0,
+        hra: 0,
+        conveyance: 0,
+        otherEarnings: 0,
+        pf: 0,
+        esi: 0,
+        advance: 0,
+        tds: 0,
+        otherDeductions: 0
+    });
+    const [isSaving, setIsSaving] = useState(false);
 
     useEffect(() => {
         fetchPayroll();
@@ -56,20 +73,82 @@ const HRPayroll = () => {
     const calculateDynamicPayout = (emp) => {
         const days = manualDays[emp.id] ? parseFloat(manualDays[emp.id]) : null;
         if (days === null) return emp.earnings;
+        return Math.round((emp.earnings / 26) * days);
+    };
+
+    // Edit Salary Functions
+    const handleEditSalary = async (emp) => {
+        setEditingEmployee(emp);
+        setEditModal(true);
         
-        // Simple Ratio Calc
-        // Assuming original earnings were based on 26 days (standard) or fetched from attendance
-        // Since we don't have the full breakdown here, we approximate standard pro-rata
-        // Employee: Monthly Salary / 26 * days
-        // Worker: Hourly * 8 * days (Approximation for UI update)
-        
-        if (emp.role === 'worker') {
-            // We don't have hourly rate here easily without fetching detail, 
-            // but let's assume valid approximation from total / standard hours
-            // Or better, just ratio: (Earnings / 26) * Days
-             return Math.round((emp.earnings / 26) * days);
-        } else {
-             return Math.round((emp.earnings / 26) * days);
+        // Try to fetch existing payroll record
+        try {
+            const record = await mockService.getPayrollRecord(emp.id, selectedMonth);
+            if (record) {
+                setSalaryData({
+                    daysWorked: record.daysWorked || 26,
+                    basic: record.basic || 0,
+                    hra: record.hra || 0,
+                    conveyance: record.conveyance || 0,
+                    otherEarnings: record.otherEarnings || 0,
+                    pf: record.pf || 0,
+                    esi: record.esi || 0,
+                    advance: record.advance || 0,
+                    tds: record.tds || 0,
+                    otherDeductions: record.otherDeductions || 0
+                });
+            } else {
+                // Auto-calculate from employee's monthly salary (50/30/10/10 split)
+                const monthlySalary = emp.earnings || 0;
+                const days = manualDays[emp.id] || 26;
+                const ratio = days / 26;
+                setSalaryData({
+                    daysWorked: days,
+                    basic: Math.round(monthlySalary * 0.5 * ratio),
+                    hra: Math.round(monthlySalary * 0.3 * ratio),
+                    conveyance: Math.round(monthlySalary * 0.1 * ratio),
+                    otherEarnings: Math.round(monthlySalary * 0.1 * ratio),
+                    pf: Math.round(monthlySalary * 0.5 * ratio * 0.12),
+                    esi: 0,
+                    advance: 0,
+                    tds: 0,
+                    otherDeductions: 0
+                });
+            }
+        } catch (e) {
+            console.error('Failed to fetch payroll record', e);
+        }
+    };
+
+    const handleSalaryChange = (field, value) => {
+        setSalaryData(prev => ({
+            ...prev,
+            [field]: parseFloat(value) || 0
+        }));
+    };
+
+    const grossEarnings = salaryData.basic + salaryData.hra + salaryData.conveyance + salaryData.otherEarnings;
+    const totalDeductions = salaryData.pf + salaryData.esi + salaryData.advance + salaryData.tds + salaryData.otherDeductions;
+    const netPayable = grossEarnings - totalDeductions;
+
+    const handleSaveSalary = async () => {
+        if (!editingEmployee) return;
+        setIsSaving(true);
+        try {
+            await mockService.savePayrollRecord({
+                userId: editingEmployee.id,
+                month: selectedMonth,
+                ...salaryData
+            });
+            setEditModal(false);
+            setEditingEmployee(null);
+            fetchPayroll(); // Refresh data
+            alert('Salary record saved successfully!');
+        } catch (e) {
+            console.error('Failed to save payroll record', e);
+            alert('Failed to save salary record');
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -83,7 +162,6 @@ const HRPayroll = () => {
     }
 
     const employees = summary?.employees || [];
-    // Recalculate total payroll based on overrides
     const dynamicTotalPayroll = employees.reduce((sum, emp) => sum + calculateDynamicPayout(emp), 0);
 
     return (
@@ -101,6 +179,7 @@ const HRPayroll = () => {
                             onChange={(e) => setSelectedMonth(e.target.value)}
                             style={{ background: 'transparent', border: 'none', color: 'white', fontWeight: 700, padding: '12px 0', outline: 'none', cursor: 'pointer' }}
                         >
+                            <option value="2026-02" style={{ color: 'black' }}>February 2026</option>
                             <option value="2026-01" style={{ color: 'black' }}>January 2026</option>
                             <option value="2025-12" style={{ color: 'black' }}>December 2025</option>
                             <option value="2025-11" style={{ color: 'black' }}>November 2025</option>
@@ -108,7 +187,7 @@ const HRPayroll = () => {
                     </div>
                     <button onClick={handleExportReport} style={{ background: 'white', color: '#44337a', border: 'none', padding: '0 24px', borderRadius: '16px', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
                         <Download size={18} />
-                        <span>Export Fiscal Report</span>
+                        <span>Export Salary Sheet</span>
                     </button>
                 </div>
             </header>
@@ -146,102 +225,192 @@ const HRPayroll = () => {
                         </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '32px' }}>
-                        <section style={{ background: 'white', padding: '32px', borderRadius: '32px', boxShadow: 'var(--shadow-sm)', border: '1px solid #f1f5f9' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-                                <div style={{ width: '40px', height: '40px', background: '#f8fafc', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', border: '1px solid #f1f5f9' }}>
-                                    <Users size={20} />
-                                </div>
-                                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Professional Payout Breakdown</h3>
+                    <section style={{ background: 'white', padding: '32px', borderRadius: '32px', boxShadow: 'var(--shadow-sm)', border: '1px solid #f1f5f9' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+                            <div style={{ width: '40px', height: '40px', background: '#f8fafc', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', border: '1px solid #f1f5f9' }}>
+                                <Users size={20} />
                             </div>
-                            <div style={{ overflowX: 'auto' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                                    <thead>
-                                        <tr>
-                                            <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9' }}>Professional</th>
-                                            <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9' }}>Department</th>
-                                            <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9' }}>Type</th>
-                                            <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9', width: '100px' }}>Days</th>
-                                            <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9' }}>Total Payout</th>
-                                            <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9' }}>Slip</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {employees.map((item) => (
-                                            <tr key={item.id}>
-                                                <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
-                                                    <div>
-                                                        <div style={{ fontWeight: 800, color: 'var(--text-main)', fontSize: '0.95rem' }}>{item.name}</div>
-                                                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontFamily: 'monospace' }}>#{item.id}</div>
-                                                    </div>
-                                                </td>
-                                                <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
-                                                    <span style={{ background: '#f8fafc', color: '#64748b', padding: '4px 10px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 700 }}>{item.department || 'N/A'}</span>
-                                                </td>
-                                                <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
-                                                    <span style={{ background: item.role === 'worker' ? '#fff7ed' : '#f0f9ff', color: item.role === 'worker' ? '#ea580c' : '#0284c7', padding: '4px 10px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 700 }}>
-                                                        {item.type || (item.role === 'worker' ? 'Hourly' : 'Salaried')}
-                                                    </span>
-                                                </td>
-                                                <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
-                                                    <input 
-                                                        type="number"
-                                                        placeholder="26"
-                                                        value={manualDays[item.id] !== undefined ? manualDays[item.id] : 26}
-                                                        onChange={(e) => handleDayChange(item.id, e.target.value)}
-                                                        style={{ width: '50px', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontWeight: 600, textAlign: 'center' }}
-                                                    />
-                                                </td>
-                                                <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
-                                                    <span style={{ fontWeight: 800, color: 'var(--primary)', fontSize: '1rem' }}>₹{calculateDynamicPayout(item).toLocaleString()}</span>
-                                                </td>
-                                                <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
-                                                    <button onClick={() => handleDownloadPayslip(item.id)} style={{ background: '#f8fafc', border: 'none', padding: '8px', borderRadius: '8px', cursor: 'pointer', color: '#64748b' }} title="Generate Payslip">
+                            <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>Professional Payout Breakdown</h3>
+                        </div>
+                        <div style={{ overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                                <thead>
+                                    <tr>
+                                        <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9' }}>Professional</th>
+                                        <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9' }}>Department</th>
+                                        <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9' }}>Type</th>
+                                        <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9', width: '80px' }}>Days</th>
+                                        <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9' }}>Total Payout</th>
+                                        <th style={{ padding: '16px', fontSize: '0.75rem', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', borderBottom: '1px solid #f1f5f9' }}>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {employees.map((item) => (
+                                        <tr key={item.id}>
+                                            <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
+                                                <div>
+                                                    <div style={{ fontWeight: 800, color: 'var(--text-main)', fontSize: '0.95rem' }}>{item.name}</div>
+                                                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontFamily: 'monospace' }}>#{item.id}</div>
+                                                </div>
+                                            </td>
+                                            <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
+                                                <span style={{ background: '#f8fafc', color: '#64748b', padding: '4px 10px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 700 }}>{item.department || 'N/A'}</span>
+                                            </td>
+                                            <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
+                                                <span style={{ background: item.role === 'worker' ? '#fff7ed' : '#f0f9ff', color: item.role === 'worker' ? '#ea580c' : '#0284c7', padding: '4px 10px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 700 }}>
+                                                    {item.type || (item.role === 'worker' ? 'Hourly' : 'Salaried')}
+                                                </span>
+                                            </td>
+                                            <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
+                                                <input 
+                                                    type="number"
+                                                    placeholder="26"
+                                                    value={manualDays[item.id] !== undefined ? manualDays[item.id] : 26}
+                                                    onChange={(e) => handleDayChange(item.id, e.target.value)}
+                                                    style={{ width: '50px', padding: '8px', borderRadius: '8px', border: '1px solid #e2e8f0', fontWeight: 600, textAlign: 'center' }}
+                                                />
+                                            </td>
+                                            <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
+                                                <span style={{ fontWeight: 800, color: 'var(--primary)', fontSize: '1rem' }}>₹{calculateDynamicPayout(item).toLocaleString()}</span>
+                                            </td>
+                                            <td style={{ padding: '16px', borderBottom: '1px solid #f1f5f9' }}>
+                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                    <button 
+                                                        onClick={() => handleEditSalary(item)} 
+                                                        style={{ background: '#6200ea', border: 'none', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, fontSize: '0.8rem' }} 
+                                                        title="Edit Salary"
+                                                    >
+                                                        <Pencil size={14} />
+                                                        <span>Edit</span>
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleDownloadPayslip(item.id)} 
+                                                        style={{ background: '#f8fafc', border: 'none', padding: '8px', borderRadius: '8px', cursor: 'pointer', color: '#64748b' }} 
+                                                        title="Generate Payslip"
+                                                    >
                                                         <FileText size={16} />
                                                     </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </section>
-
-                        <section style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                            <div style={{ background: 'white', padding: '32px', borderRadius: '32px', boxShadow: 'var(--shadow-sm)', border: '1px solid #f1f5f9' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-                                    <PieChart size={20} color="var(--primary)" />
-                                    <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Fiscal Insights</h3>
-                                </div>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f1f5f9' }}>
-                                        <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#64748b' }}>Total Professionals</span>
-                                        <span style={{ fontWeight: 800, color: 'var(--text-main)' }}>{employees.length}</span>
-                                    </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f1f5f9' }}>
-                                        <span style={{ fontSize: '0.9rem', fontWeight: 700, color:'#64748b' }}>Avg. Disbursement</span>
-                                        <span style={{ fontWeight: 800, color: 'var(--text-main)' }}>₹{employees.length > 0 ? Math.round(dynamicTotalPayroll / employees.length).toLocaleString() : 0}</span>
-                                   </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0' }}>
-                                        <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#64748b' }}>Compliance Status</span>
-                                        <div style={{ background: '#f0fdf4', color: '#16a34a', padding: '6px 14px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 800 }}>
-                                            <ShieldCheck size={14} />
-                                            <span>Certified</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <button style={{ height: '70px', background: '#10b981', color: 'white', border: 'none', borderRadius: '24px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px', fontWeight: 800, fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 10px 25px rgba(16, 185, 129, 0.2)' }}>
-                                <IndianRupee size={20} />
-                                <span style={{ textDecoration: 'line-through' }}>Authorize Batch Disbursement</span>
-                            </button>
-                        </section>
-                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </section>
                 </div>
             </main>
+
+            {/* Edit Salary Modal */}
+            {editModal && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                    <div style={{ background: 'white', borderRadius: '24px', padding: '32px', width: '700px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                            <div>
+                                <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: 'var(--text-main)' }}>Edit Salary Details</h2>
+                                <p style={{ color: '#94a3b8', fontSize: '0.9rem' }}>{editingEmployee?.name} • {selectedMonth}</p>
+                            </div>
+                            <button onClick={() => setEditModal(false)} style={{ background: '#f1f5f9', border: 'none', borderRadius: '12px', padding: '10px', cursor: 'pointer' }}>
+                                <X size={20} color="#64748b" />
+                            </button>
+                        </div>
+
+                        {/* Days Worked */}
+                        <div style={{ marginBottom: '24px' }}>
+                            <label style={{ fontSize: '0.85rem', fontWeight: 700, color: '#64748b', display: 'block', marginBottom: '8px' }}>Days Worked</label>
+                            <input 
+                                type="number" 
+                                value={salaryData.daysWorked} 
+                                onChange={(e) => handleSalaryChange('daysWorked', e.target.value)}
+                                style={{ width: '100px', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '1rem', fontWeight: 600 }}
+                            />
+                        </div>
+
+                        {/* Earnings Section */}
+                        <div style={{ marginBottom: '24px' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#10b981', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ width: '8px', height: '8px', background: '#10b981', borderRadius: '50%' }}></span>
+                                EARNINGS
+                            </h3>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                {[
+                                    { label: 'Basic Salary', field: 'basic' },
+                                    { label: 'HRA', field: 'hra' },
+                                    { label: 'Conveyance', field: 'conveyance' },
+                                    { label: 'Other Allowances', field: 'otherEarnings' }
+                                ].map(item => (
+                                    <div key={item.field}>
+                                        <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>{item.label}</label>
+                                        <input 
+                                            type="number" 
+                                            value={salaryData[item.field]} 
+                                            onChange={(e) => handleSalaryChange(item.field, e.target.value)}
+                                            style={{ width: '100%', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '1rem' }}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                            <div style={{ background: '#f0fdf4', padding: '12px 16px', borderRadius: '12px', marginTop: '16px', display: 'flex', justifyContent: 'space-between' }}>
+                                <span style={{ fontWeight: 700, color: '#16a34a' }}>Gross Earnings</span>
+                                <span style={{ fontWeight: 800, color: '#16a34a', fontSize: '1.1rem' }}>₹{grossEarnings.toLocaleString()}</span>
+                            </div>
+                        </div>
+
+                        {/* Deductions Section */}
+                        <div style={{ marginBottom: '24px' }}>
+                            <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#ef4444', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ width: '8px', height: '8px', background: '#ef4444', borderRadius: '50%' }}></span>
+                                DEDUCTIONS
+                            </h3>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                                {[
+                                    { label: 'Provident Fund (PF)', field: 'pf' },
+                                    { label: 'ESI', field: 'esi' },
+                                    { label: 'Advance Recovery', field: 'advance' },
+                                    { label: 'TDS', field: 'tds' },
+                                    { label: 'Other Deductions', field: 'otherDeductions' }
+                                ].map(item => (
+                                    <div key={item.field}>
+                                        <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '6px' }}>{item.label}</label>
+                                        <input 
+                                            type="number" 
+                                            value={salaryData[item.field]} 
+                                            onChange={(e) => handleSalaryChange(item.field, e.target.value)}
+                                            style={{ width: '100%', padding: '12px', border: '1px solid #e2e8f0', borderRadius: '12px', fontSize: '1rem' }}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                            <div style={{ background: '#fef2f2', padding: '12px 16px', borderRadius: '12px', marginTop: '16px', display: 'flex', justifyContent: 'space-between' }}>
+                                <span style={{ fontWeight: 700, color: '#dc2626' }}>Total Deductions</span>
+                                <span style={{ fontWeight: 800, color: '#dc2626', fontSize: '1.1rem' }}>₹{totalDeductions.toLocaleString()}</span>
+                            </div>
+                        </div>
+
+                        {/* Net Payable */}
+                        <div style={{ background: 'linear-gradient(135deg, #6200ea 0%, #44337a 100%)', padding: '20px 24px', borderRadius: '16px', marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span style={{ fontWeight: 800, color: 'white', fontSize: '1.1rem' }}>NET PAYABLE</span>
+                            <span style={{ fontWeight: 800, color: 'white', fontSize: '1.8rem' }}>₹{netPayable.toLocaleString()}</span>
+                        </div>
+
+                        {/* Actions */}
+                        <div style={{ display: 'flex', gap: '16px', justifyContent: 'flex-end' }}>
+                            <button onClick={() => setEditModal(false)} style={{ padding: '14px 28px', background: '#f1f5f9', border: 'none', borderRadius: '12px', fontWeight: 700, cursor: 'pointer', color: '#64748b' }}>Cancel</button>
+                            <button 
+                                onClick={handleSaveSalary} 
+                                disabled={isSaving}
+                                style={{ padding: '14px 28px', background: '#6200ea', border: 'none', borderRadius: '12px', fontWeight: 700, cursor: 'pointer', color: 'white', display: 'flex', alignItems: 'center', gap: '8px', opacity: isSaving ? 0.7 : 1 }}
+                            >
+                                <Save size={18} />
+                                <span>{isSaving ? 'Saving...' : 'Save Changes'}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
 
 export default HRPayroll;
+
