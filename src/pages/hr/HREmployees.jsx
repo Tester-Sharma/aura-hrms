@@ -9,8 +9,10 @@ const HREmployees = () => {
 
     // Modals state
     const [showAddModal, setShowAddModal] = useState(false);
+    const [showEditModal, setShowEditModal] = useState(false);
     const [showDetailModal, setShowDetailModal] = useState(false);
     const [selectedEmployee, setSelectedEmployee] = useState(null);
+    const [editEmployee, setEditEmployee] = useState(null);
 
     // Add Form State
     const [addFormStep, setAddFormStep] = useState(1);
@@ -19,7 +21,21 @@ const HREmployees = () => {
         type: 'Worker', department: 'Production', designation: 'Assembly Specialist',
         shift: '09:00 AM - 05:00 PM',
         salaryType: 'Hourly', // Hourly or Monthly
-        baseRate: '' // Hourly Rate or CTC
+        baseRate: '', // Hourly Rate or CTC
+        
+        // Application Form Fields
+        positionAppliedFor: '',
+        educationInstitution: '',
+        educationDegree: '',
+        educationYearCompleted: '',
+        previousCompany: '',
+        previousPosition: '',
+        previousEmploymentDates: '',
+        skillsQualifications: '',
+        referenceName: '',
+        referenceRelationship: '',
+        referencePhone: '',
+        applicantSignature: ''
     });
     
     // Salary Calculation State
@@ -124,7 +140,12 @@ const HREmployees = () => {
             setShowAddModal(false);
             fetchEmployees();
             setAddFormStep(1);
-            setNewEmployee({ name: '', email: '', phone: '', address: '', photo: '', type: 'Worker', department: 'Production', designation: '', shift: '09:00 AM - 05:00 PM', salaryType: 'Hourly', baseRate: '' });
+            setNewEmployee({ 
+                name: '', email: '', phone: '', address: '', photo: '', type: 'Worker', department: 'Production', designation: '', shift: '09:00 AM - 05:00 PM', salaryType: 'Hourly', baseRate: '',
+                positionAppliedFor: '', educationInstitution: '', educationDegree: '', educationYearCompleted: '',
+                previousCompany: '', previousPosition: '', previousEmploymentDates: '',
+                skillsQualifications: '', referenceName: '', referenceRelationship: '', referencePhone: '', applicantSignature: ''
+            });
             alert('Employee registered successfully!');
         } catch (error) {
             console.error('Registration failed:', error);
@@ -137,6 +158,33 @@ const HREmployees = () => {
             await mockService.downloadApplicationForm(userId);
         } catch (error) {
             alert("Failed to download application form");
+        }
+    };
+
+    const handleEditEmployee = (employee) => {
+        setEditEmployee({
+            ...employee,
+            baseRate: employee.role === 'worker' ? employee.hourlyRate : employee.ctc,
+            esicNumber: employee.esicNumber || '',
+            epfoNumber: employee.epfoNumber || '',
+            esicEnabled: employee.esicEnabled || false,
+            epfoEnabled: employee.epfoEnabled !== undefined ? employee.epfoEnabled : true,
+            advanceAmount: employee.advanceAmount || 0,
+            loanAmount: employee.loanAmount || 0,
+            tdsEnabled: employee.tdsEnabled || false
+        });
+        setShowEditModal(true);
+    };
+
+    const handleUpdateEmployee = async () => {
+        try {
+            await mockService.updateEmployee(editEmployee);
+            setShowEditModal(false);
+            fetchEmployees();
+            alert('Employee updated successfully!');
+        } catch (error) {
+            console.error('Update failed:', error);
+            alert(`Failed to update: ${error.message || 'Unknown error'}`);
         }
     };
 
@@ -230,6 +278,9 @@ const HREmployees = () => {
                                             </td>
                                             <td>
                                                 <div className="action-cluster" style={{ display: 'flex', gap: '8px' }}>
+                                                    <button className="icon-btn" onClick={() => handleEditEmployee(emp)} title="Edit Employee">
+                                                        <Edit2 size={16} />
+                                                    </button>
                                                     <button className="icon-btn" onClick={() => handleApplicationForm(emp.id)} title="Download App Form">
                                                         <FileText size={16} />
                                                     </button>
@@ -264,6 +315,8 @@ const HREmployees = () => {
                             <span className={`step ${addFormStep >= 2 ? 'active' : ''}`}>2. Position</span>
                             <div className="step-line" />
                             <span className={`step ${addFormStep >= 3 ? 'active' : ''}`}>3. Payroll</span>
+                            <div className="step-line" />
+                            <span className={`step ${addFormStep >= 4 ? 'active' : ''}`}>4. Application</span>
                         </div>
 
                         <div className="modal-body">
@@ -334,15 +387,114 @@ const HREmployees = () => {
                                     )}
                                 </div>
                             )}
+                            {addFormStep === 4 && (
+                                <div className="form-grid">
+                                    <div style={{ gridColumn: 'span 2' }}><h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--primary)', marginBottom: '12px' }}>Application Form Details</h3></div>
+                                    <input placeholder="Position Applied For" value={newEmployee.positionAppliedFor} onChange={e => setNewEmployee({ ...newEmployee, positionAppliedFor: e.target.value })} />
+                                    <input placeholder="Education Institution" value={newEmployee.educationInstitution} onChange={e => setNewEmployee({ ...newEmployee, educationInstitution: e.target.value })} />
+                                    <input placeholder="Degree/Certification" value={newEmployee.educationDegree} onChange={e => setNewEmployee({ ...newEmployee, educationDegree: e.target.value })} />
+                                    <input placeholder="Year Completed" value={newEmployee.educationYearCompleted} onChange={e => setNewEmployee({ ...newEmployee, educationYearCompleted: e.target.value })} />
+                                    <input placeholder="Previous Company" value={newEmployee.previousCompany} onChange={e => setNewEmployee({ ...newEmployee, previousCompany: e.target.value })} />
+                                    <input placeholder="Previous Position" value={newEmployee.previousPosition} onChange={e => setNewEmployee({ ...newEmployee, previousPosition: e.target.value })} />
+                                    <input placeholder="Employment Dates (e.g., Jan 2020 - Dec 2022)" value={newEmployee.previousEmploymentDates} onChange={e => setNewEmployee({ ...newEmployee, previousEmploymentDates: e.target.value })} />
+                                    <textarea placeholder="Skills & Qualifications" value={newEmployee.skillsQualifications} onChange={e => setNewEmployee({ ...newEmployee, skillsQualifications: e.target.value })} style={{ gridColumn: 'span 2', minHeight: '80px' }} />
+                                    <input placeholder="Reference Name" value={newEmployee.referenceName} onChange={e => setNewEmployee({ ...newEmployee, referenceName: e.target.value })} />
+                                    <input placeholder="Reference Relationship" value={newEmployee.referenceRelationship} onChange={e => setNewEmployee({ ...newEmployee, referenceRelationship: e.target.value })} />
+                                    <input placeholder="Reference Phone" value={newEmployee.referencePhone} onChange={e => setNewEmployee({ ...newEmployee, referencePhone: e.target.value })} />
+                                </div>
+                            )}
                         </div>
 
                         <div className="modal-footer">
                             <button className="btn-sec" disabled={addFormStep === 1} onClick={() => setAddFormStep(p => p - 1)}>Back</button>
-                            {addFormStep < 3 ? (
+                            {addFormStep < 4 ? (
                                 <button className="btn-pri" onClick={() => setAddFormStep(p => p + 1)}>Next</button>
                             ) : (
                                 <button className="btn-pri" onClick={handleRegister}>Register Employee</button>
                             )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Employee Modal */}
+            {showEditModal && editEmployee && (
+                <div className="modal-overlay">
+                    <div className="modal-content large fadeIn">
+                        <div className="modal-header">
+                            <h2>Edit Employee - {editEmployee.name}</h2>
+                            <button className="close-btn" onClick={() => setShowEditModal(false)}><X size={20} /></button>
+                        </div>
+                        
+                        <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+                            <div className="form-grid">
+                                <div style={{ gridColumn: 'span 2' }}><h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--primary)', marginBottom: '12px' }}>Basic Information</h3></div>
+                                <input placeholder="Full Name" value={editEmployee.name} onChange={e => setEditEmployee({ ...editEmployee, name: e.target.value })} />
+                                <input placeholder="Email" value={editEmployee.email || ''} onChange={e => setEditEmployee({ ...editEmployee, email: e.target.value })} />
+                                <input placeholder="Phone" value={editEmployee.phone || ''} onChange={e => setEditEmployee({ ...editEmployee, phone: e.target.value })} />
+                                <input placeholder="Department" value={editEmployee.department || ''} onChange={e => setEditEmployee({ ...editEmployee, department: e.target.value })} />
+                                <input placeholder="Designation" value={editEmployee.designation || ''} onChange={e => setEditEmployee({ ...editEmployee, designation: e.target.value })} />
+                                <input placeholder="Shift" value={editEmployee.shift || ''} onChange={e => setEditEmployee({ ...editEmployee, shift: e.target.value })} />
+                                <textarea placeholder="Address" value={editEmployee.address || ''} onChange={e => setEditEmployee({ ...editEmployee, address: e.target.value })} />
+                                
+                                <div style={{ gridColumn: 'span 2', marginTop: '20px' }}><h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--primary)', marginBottom: '12px' }}>Salary Information</h3></div>
+                                <div>
+                                    <label style={{ display: 'block', fontWeight: 700, marginBottom: '8px', color: '#64748b' }}>{editEmployee.role === 'worker' ? 'Hourly Rate (₹)' : 'Annual CTC (₹)'}</label>
+                                    <input type="number" value={editEmployee.baseRate || ''} onChange={e => setEditEmployee({ ...editEmployee, baseRate: e.target.value })} />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontWeight: 700, marginBottom: '8px', color: '#64748b' }}>Monthly Salary (₹)</label>
+                                    <input type="number" value={editEmployee.monthlySalary || ''} onChange={e => setEditEmployee({ ...editEmployee, monthlySalary: e.target.value })} />
+                                </div>
+                                
+                                <div style={{ gridColumn: 'span 2', marginTop: '20px' }}><h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--primary)', marginBottom: '12px' }}>Financial Details (ESIC, EPFO, Loans, TDS)</h3></div>
+                                <div>
+                                    <label style={{ display: 'block', fontWeight: 700, marginBottom: '8px', color: '#64748b' }}>ESIC Number</label>
+                                    <input placeholder="ESIC Number" value={editEmployee.esicNumber || ''} onChange={e => setEditEmployee({ ...editEmployee, esicNumber: e.target.value })} />
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: '#f8fafc', borderRadius: '12px' }}>
+                                    <input type="checkbox" checked={editEmployee.esicEnabled} onChange={e => setEditEmployee({ ...editEmployee, esicEnabled: e.target.checked })} style={{ width: '20px', height: '20px' }} />
+                                    <label style={{ fontWeight: 700, color: '#64748b' }}>ESIC Enabled</label>
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontWeight: 700, marginBottom: '8px', color: '#64748b' }}>EPFO/UAN Number</label>
+                                    <input placeholder="EPFO Number" value={editEmployee.epfoNumber || ''} onChange={e => setEditEmployee({ ...editEmployee, epfoNumber: e.target.value })} />
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: '#f8fafc', borderRadius: '12px' }}>
+                                    <input type="checkbox" checked={editEmployee.epfoEnabled} onChange={e => setEditEmployee({ ...editEmployee, epfoEnabled: e.target.checked })} style={{ width: '20px', height: '20px' }} />
+                                    <label style={{ fontWeight: 700, color: '#64748b' }}>EPFO Enabled</label>
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontWeight: 700, marginBottom: '8px', color: '#64748b' }}>Advance Amount (₹)</label>
+                                    <input type="number" placeholder="0" value={editEmployee.advanceAmount || 0} onChange={e => setEditEmployee({ ...editEmployee, advanceAmount: parseFloat(e.target.value) || 0 })} />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontWeight: 700, marginBottom: '8px', color: '#64748b' }}>Loan Amount (₹)</label>
+                                    <input type="number" placeholder="0" value={editEmployee.loanAmount || 0} onChange={e => setEditEmployee({ ...editEmployee, loanAmount: parseFloat(e.target.value) || 0 })} />
+                                </div>
+                                <div style={{ gridColumn: 'span 2', display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: '#f8fafc', borderRadius: '12px' }}>
+                                    <input type="checkbox" checked={editEmployee.tdsEnabled} onChange={e => setEditEmployee({ ...editEmployee, tdsEnabled: e.target.checked })} style={{ width: '20px', height: '20px' }} />
+                                    <label style={{ fontWeight: 700, color: '#64748b' }}>TDS Deduction Enabled</label>
+                                </div>
+                                
+                                <div style={{ gridColumn: 'span 2', marginTop: '20px' }}><h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: 'var(--primary)', marginBottom: '12px' }}>Application Form Details</h3></div>
+                                <input placeholder="Position Applied For" value={editEmployee.positionAppliedFor || ''} onChange={e => setEditEmployee({ ...editEmployee, positionAppliedFor: e.target.value })} />
+                                <input placeholder="Education Institution" value={editEmployee.educationInstitution || ''} onChange={e => setEditEmployee({ ...editEmployee, educationInstitution: e.target.value })} />
+                                <input placeholder="Degree/Certification" value={editEmployee.educationDegree || ''} onChange={e => setEditEmployee({ ...editEmployee, educationDegree: e.target.value })} />
+                                <input placeholder="Year Completed" value={editEmployee.educationYearCompleted || ''} onChange={e => setEditEmployee({ ...editEmployee, educationYearCompleted: e.target.value })} />
+                                <input placeholder="Previous Company" value={editEmployee.previousCompany || ''} onChange={e => setEditEmployee({ ...editEmployee, previousCompany: e.target.value })} />
+                                <input placeholder="Previous Position" value={editEmployee.previousPosition || ''} onChange={e => setEditEmployee({ ...editEmployee, previousPosition: e.target.value })} />
+                                <input placeholder="Employment Dates" value={editEmployee.previousEmploymentDates || ''} onChange={e => setEditEmployee({ ...editEmployee, previousEmploymentDates: e.target.value })} />
+                                <textarea placeholder="Skills & Qualifications" value={editEmployee.skillsQualifications || ''} onChange={e => setEditEmployee({ ...editEmployee, skillsQualifications: e.target.value })} style={{ gridColumn: 'span 2', minHeight: '80px' }} />
+                                <input placeholder="Reference Name" value={editEmployee.referenceName || ''} onChange={e => setEditEmployee({ ...editEmployee, referenceName: e.target.value })} />
+                                <input placeholder="Reference Relationship" value={editEmployee.referenceRelationship || ''} onChange={e => setEditEmployee({ ...editEmployee, referenceRelationship: e.target.value })} />
+                                <input placeholder="Reference Phone" value={editEmployee.referencePhone || ''} onChange={e => setEditEmployee({ ...editEmployee, referencePhone: e.target.value })} />
+                            </div>
+                        </div>
+
+                        <div className="modal-footer">
+                            <button className="btn-sec" onClick={() => setShowEditModal(false)}>Cancel</button>
+                            <button className="btn-pri" onClick={handleUpdateEmployee}>Update Employee</button>
                         </div>
                     </div>
                 </div>

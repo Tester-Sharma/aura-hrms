@@ -138,9 +138,17 @@ const mockService = {
         });
     },
 
+    updateEmployee: async (data) => {
+        return request('/hr/update-employee', {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+    },
+
     getEmployeeDetails: async (id) => {
         return request(`/worker/profile?userId=${id}`);
     },
+
 
     getPendingLeaves: async () => {
         return request('/hr/pending-leaves');

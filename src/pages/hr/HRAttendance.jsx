@@ -13,6 +13,8 @@ const HRAttendance = () => {
     
     // Manual Entry Modal
     const [showManualModal, setShowManualModal] = useState(false);
+    const [showEditAttendanceModal, setShowEditAttendanceModal] = useState(false);
+    const [editAttendanceData, setEditAttendanceData] = useState(null);
     const [manualData, setManualData] = useState({
         userId: '', date: new Date().toISOString().split('T')[0], status: 'Present', inTime: '', outTime: ''
     });
@@ -76,6 +78,29 @@ const HRAttendance = () => {
             await mockService.downloadAttendanceSheet(selectedMonth);
         } catch (e) {
             alert("Download Failed");
+        }
+    };
+
+    const handleEditAttendance = (log) => {
+        setEditAttendanceData({
+            userId: selectedEmployee.id,
+            date: log.date,
+            status: log.status,
+            inTime: log.in || '',
+            outTime: log.out || ''
+        });
+        setShowEditAttendanceModal(true);
+    };
+
+    const handleUpdateAttendance = async () => {
+        try {
+            await mockService.updateAttendanceRecord(editAttendanceData);
+            alert("Attendance Updated Successfully");
+            setShowEditAttendanceModal(false);
+            // Refresh history
+            fetchHistory(selectedEmployee.id, selectedMonth);
+        } catch (e) {
+            alert("Failed to update attendance: " + e.message);
         }
     };
 
@@ -256,6 +281,7 @@ const HRAttendance = () => {
                                             <th>In</th>
                                             <th>Out</th>
                                             <th>Hours</th>
+                                            <th>Edit</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -270,6 +296,11 @@ const HRAttendance = () => {
                                                 <td className="mono">{log.in}</td>
                                                 <td className="mono">{log.out}</td>
                                                 <td className="mono bold">{log.total}h</td>
+                                                <td>
+                                                    <button className="edit-att-btn" onClick={() => handleEditAttendance(log)} title="Edit Record">
+                                                        <Edit size={14} />
+                                                    </button>
+                                                </td>
                                             </tr>
                                         ))}
                                     </tbody>
@@ -295,6 +326,49 @@ const HRAttendance = () => {
                                 </div>
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Attendance Modal */}
+            {showEditAttendanceModal && editAttendanceData && (
+                <div className="modal-overlay">
+                    <div className="modal-content fadeIn" style={{ width: '500px' }}>
+                        <div className="modal-header">
+                            <h2>Edit Attendance Record</h2>
+                            <button className="close-btn" onClick={() => setShowEditAttendanceModal(false)}><X size={20} /></button>
+                        </div>
+                        <div className="modal-body" style={{ padding: '32px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                            <div className="form-group">
+                                <label>Date</label>
+                                <input type="text" value={editAttendanceData.date} disabled style={{ background: '#f1f5f9', color: '#94a3b8' }} />
+                            </div>
+                            <div className="form-group grid-2">
+                                <div>
+                                    <label>Status</label>
+                                    <select value={editAttendanceData.status} onChange={e => setEditAttendanceData({...editAttendanceData, status: e.target.value})}>
+                                        <option value="Present">Present</option>
+                                        <option value="Absent">Absent</option>
+                                        <option value="Leave">Leave</option>
+                                        <option value="Half Day">Half Day</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="form-group grid-2">
+                                <div>
+                                    <label>In Time</label>
+                                    <input type="time" value={editAttendanceData.inTime} onChange={e => setEditAttendanceData({...editAttendanceData, inTime: e.target.value})} />
+                                </div>
+                                <div>
+                                    <label>Out Time</label>
+                                    <input type="time" value={editAttendanceData.outTime} onChange={e => setEditAttendanceData({...editAttendanceData, outTime: e.target.value})} />
+                                </div>
+                            </div>
+                            <button className="primary-btn full" onClick={handleUpdateAttendance}>
+                                <Save size={18} />
+                                <span>Update Record</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

@@ -647,8 +647,23 @@ app.post('/api/hr/register-employee', async (req, res) => {
             ...salaryFields,
             photo: data.photo, // Add photo to user data
             salaryBreakdown: data.salaryBreakdown ? JSON.stringify(data.salaryBreakdown) : null,
-            password: '12345'
+            password: '12345',
+            
+            // Application Form Fields
+            positionAppliedFor: data.positionAppliedFor,
+            educationInstitution: data.educationInstitution,
+            educationDegree: data.educationDegree,
+            educationYearCompleted: data.educationYearCompleted,
+            previousCompany: data.previousCompany,
+            previousPosition: data.previousPosition,
+            previousEmploymentDates: data.previousEmploymentDates,
+            skillsQualifications: data.skillsQualifications,
+            referenceName: data.referenceName,
+            referenceRelationship: data.referenceRelationship,
+            referencePhone: data.referencePhone,
+            applicantSignature: data.applicantSignature
         };
+
 
         const user = await prisma.user.create({
             data: userData
@@ -661,6 +676,66 @@ app.post('/api/hr/register-employee', async (req, res) => {
     }
 });
 
+// Update Employee Endpoint
+app.post('/api/hr/update-employee', async (req, res) => {
+    const data = req.body;
+    try {
+        if (!data.id) {
+            return res.status(400).json({ success: false, message: 'Employee ID is required' });
+        }
+
+        // Prepare update data (exclude ID from updates)
+        const updateData = {
+            name: data.name,
+            email: data.email,
+            phone: data.phone,
+            address: data.address,
+            department: data.department,
+            designation: data.designation,
+            shift: data.shift,
+            
+            // Salary fields
+            hourlyRate: data.role === 'worker' ? parseFloat(data.baseRate || data.hourlyRate) : null,
+            monthlySalary: data.role === 'employee' ? parseFloat(data.monthlySalary) : null,
+            ctc: data.role === 'employee' ? parseFloat(data.baseRate || data.ctc) : null,
+            
+            // Financial Engine Fields
+            esicNumber: data.esicNumber,
+            epfoNumber: data.epfoNumber,
+            esicEnabled: data.esicEnabled || false,
+            epfoEnabled: data.epfoEnabled !== undefined ? data.epfoEnabled : true,
+            advanceAmount: parseFloat(data.advanceAmount) || 0,
+            loanAmount: parseFloat(data.loanAmount) || 0,
+            tdsEnabled: data.tdsEnabled || false,
+            
+            // Application Form Fields
+            positionAppliedFor: data.positionAppliedFor,
+            educationInstitution: data.educationInstitution,
+            educationDegree: data.educationDegree,
+            educationYearCompleted: data.educationYearCompleted,
+            previousCompany: data.previousCompany,
+            previousPosition: data.previousPosition,
+            previousEmploymentDates: data.previousEmploymentDates,
+            skillsQualifications: data.skillsQualifications,
+            referenceName: data.referenceName,
+            referenceRelationship: data.referenceRelationship,
+            referencePhone: data.referencePhone,
+            applicantSignature: data.applicantSignature
+        };
+
+        const updatedUser = await prisma.user.update({
+            where: { id: data.id },
+            data: updateData
+        });
+
+        res.json({ success: true, user: updatedUser });
+    } catch (e) {
+        console.error('Update Error:', e.message);
+        res.status(500).json({ success: false, message: e.message });
+    }
+});
+
+
 // Generate Employee Application Form (PDF)
 app.get('/api/hr/application-form/:userId', async (req, res) => {
     const { userId } = req.params;
@@ -670,71 +745,120 @@ app.get('/api/hr/application-form/:userId', async (req, res) => {
 
         const company = await prisma.company.findFirst();
 
-        const doc = new PDFDocument({ margin: 40 });
+        // Reduced margins to fit content on one page
+        const doc = new PDFDocument({ margin: 30, size: 'A4' });
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename=Application_${user.name}.pdf`);
         doc.pipe(res);
 
-        // -- HEADER --
-        if (company?.logo) {
-            try {
-                const logoBuffer = Buffer.from(company.logo.split(',')[1], 'base64');
-                doc.image(logoBuffer, 40, 40, { width: 50 });
-            } catch (e) { console.error("Logo Error", e); }
-        }
+        // --- CONSTANTS ---
+        const THEME_COLOR = '#6200EA'; 
+        const BORDER_COLOR = '#CBD5E1'; 
+        const TEXT_MAIN = '#1E293B';
+        const TEXT_LABEL = '#64748B';
 
-        doc.fontSize(20).font('Helvetica-Bold').text(company?.name || 'AURA HRMS', 100, 45);
-        doc.fontSize(10).font('Helvetica').text(company?.address || 'Corporate Office', 100, 70);
-        
-        doc.moveDown(4);
-
-        // -- TITLE --
-        doc.fontSize(16).text('EMPLOYEE APPLICATION FORM', { align: 'center', underline: true });
-        doc.moveDown(2);
-
-        // -- PHOTO --
-        if (user.photo) {
-            try {
-                const photoBuffer = Buffer.from(user.photo.split(',')[1], 'base64');
-                doc.image(photoBuffer, 450, 40, { width: 100, height: 100, fit: [100, 100] });
-            } catch (e) { console.error("Photo Error", e); }
-        }
-
-        // -- DETAILS --
-        const yStart = doc.y;
-        
-        const field = (label, value, y) => {
-            doc.font('Helvetica-Bold').fontSize(11).text(label, 50, y);
-            doc.font('Helvetica').text(value || '-', 200, y);
-            doc.moveTo(50, y + 15).lineTo(550, y + 15).strokeColor('#e2e8f0').stroke();
+        // --- HELPER FUNCTIONS ---
+        // Helper to draw fields with Specific Dummy Data
+        const drawField = (label, value, dummyValue, x, y, w, h = 30) => {
+            // Label
+            doc.fontSize(7).fillColor(TEXT_LABEL).font('Helvetica-Bold').text(label.toUpperCase(), x, y);
+            
+            // Box
+            doc.rect(x, y + 10, w, h).strokeColor(BORDER_COLOR).stroke();
+            
+            // Value or Realistic Dummy Placeholder
+            const cleanValue = value ? String(value).trim() : '';
+            const displayValue = cleanValue.length > 0 ? cleanValue : dummyValue;
+            
+            // Use lighter color for placeholders
+            const isPlaceholder = displayValue === dummyValue;
+            
+            doc.fontSize(9).fillColor(isPlaceholder ? '#94A3B8' : TEXT_MAIN).font('Helvetica')
+               .text(displayValue, x + 5, y + 18, { width: w - 10, ellipsis: true });
         };
 
-        let currentY = yStart;
-        field('Full Name:', user.name, currentY); currentY += 30;
-        field('Employee ID:', user.id, currentY); currentY += 30;
-        field('Date of Joining:', new Date(user.joiningDate).toLocaleDateString(), currentY); currentY += 30;
-        field('Designation:', user.designation, currentY); currentY += 30;
-        field('Department:', user.department, currentY); currentY += 30;
-        field('Email Address:', user.email, currentY); currentY += 30;
-        field('Phone Number:', user.phone, currentY); currentY += 30;
-        field('Current Address:', user.address, currentY); currentY += 30;
-        
-        doc.moveDown(2);
-        
-        // -- DECLARATION --
-        doc.fontSize(12).font('Helvetica-Bold').text('Declaration', 50);
-        doc.fontSize(10).font('Helvetica').text(
-            'I hereby declare that the details furnished above are true and correct to the best of my knowledge and belief.',
-            50, doc.y + 10, { width: 500 }
-        );
+        const drawSectionHeader = (title, yPos) => {
+            doc.rect(30, yPos, 535, 20).fill('#EDE7F6');
+            doc.fontSize(10).fillColor(THEME_COLOR).font('Helvetica-Bold').text(title.toUpperCase(), 40, yPos + 6);
+            return yPos + 30; // Return next Y position
+        };
 
-        doc.moveDown(4);
+        // --- HEADER (Compact) ---
+        doc.rect(0, 0, 595.28, 60).fill(THEME_COLOR);
+        doc.fontSize(18).fillColor('white').font('Helvetica-Bold').text('JOB APPLICATION FORM', 30, 22);
+        if (company?.name) {
+            doc.fontSize(9).font('Helvetica').text(company.name.toUpperCase(), 350, 20, { width: 215, align: 'right' });
+            doc.fontSize(7).text('CONFIDENTIAL', 350, 32, { width: 215, align: 'right', opacity: 0.8 });
+        }
         
-        doc.text('__________________________', 50);
-        doc.text('Employee Signature', 50);
+        let y = 80;
+
+        // --- 1. APPLIED POSITION ---
+        drawField('Position Applied For', user.positionAppliedFor || user.designation, 'Software Engineer', 30, y, 535);
+        y += 50;
+
+        // --- 2. PERSONAL INFORMATION ---
+        y = drawSectionHeader('Personal Information', y);
         
-        doc.text('__________________________', 350);
-        doc.text('Authorised Signatory', 350);
+        // Row 1
+        drawField('Full Name', user.name, 'John Doe', 30, y, 260);
+        drawField('Address', user.address, '123 Tech Park, Silicon Valley, CA', 305, y, 260);
+        y += 45;
+
+        // Row 2
+        drawField('Phone Number', user.phone, '+1 (555) 123-4567', 30, y, 260);
+        drawField('Email Address', user.email, 'john.doe@example.com', 305, y, 260);
+        y += 55;
+
+        // --- 3. EDUCATION ---
+        y = drawSectionHeader('Education', y);
+        
+        drawField('School / Institution', user.educationInstitution, 'State University of Technology', 30, y, 170);
+        drawField('Degree / Certification', user.educationDegree, 'B.Sc. Computer Science', 210, y, 170);
+        drawField('Year Completed', user.educationYearCompleted, '2023', 390, y, 175);
+        y += 55;
+
+        // --- 4. EMPLOYMENT HISTORY ---
+        y = drawSectionHeader('Recent Employment History', y);
+        
+        drawField('Company Name', user.previousCompany, 'Global Tech Solutions Inc.', 30, y, 170);
+        drawField('Position Held', user.previousPosition, 'Junior Developer', 210, y, 170);
+        drawField('Employment Dates', user.previousEmploymentDates, 'Jan 2021 - Dec 2023', 390, y, 175);
+        y += 55;
+
+        // --- 5. SKILLS & QUALIFICATIONS ---
+        y = drawSectionHeader('Skills & Qualifications', y);
+        
+        doc.fontSize(7).fillColor(TEXT_LABEL).font('Helvetica-Bold').text('RELEVANT SKILLS, CERTIFICATIONS, OR QUALIFICATIONS', 30, y);
+        doc.rect(30, y + 10, 535, 45).strokeColor(BORDER_COLOR).stroke();
+        
+        const dummySkills = 'JavaScript, React, Node.js, PostgreSQL, Team Leadership, Agile Methodology';
+        const skillsText = (user.skillsQualifications && user.skillsQualifications.trim().length > 0) ? user.skillsQualifications : dummySkills;
+        
+        doc.fontSize(9).fillColor((user.skillsQualifications && user.skillsQualifications.trim().length > 0) ? TEXT_MAIN : '#94A3B8').font('Helvetica')
+           .text(skillsText, 35, y + 18, { width: 525, height: 35, ellipsis: true });
+        y += 65;
+
+        // --- 6. REFERENCES ---
+        y = drawSectionHeader('References', y);
+        
+        drawField('Reference Name', user.referenceName, 'Jane Smith', 30, y, 170);
+        drawField('Relationship', user.referenceRelationship, 'Project Manager', 210, y, 170);
+        drawField('Phone Number', user.referencePhone, '+1 (555) 987-6543', 390, y, 175);
+        y += 55;
+
+        // --- 7. DECLARATION ---
+        doc.fontSize(8).fillColor('#64748B').font('Helvetica-Oblique').text(
+            'I certify that the information provided in this application is accurate and complete. I understand that providing false information may result in disqualification from consideration for employment.',
+            30, y, { width: 535, align: 'justify' }
+        );
+        y += 35;
+
+        // --- 8. SIGNATURE (Compact) ---
+        drawField('Applicant Signature', user.applicantSignature, 'John Doe (Signed)', 365, y, 200, 35);
+        
+        // Date Field
+        drawField('Date', new Date().toLocaleDateString(), new Date().toLocaleDateString(), 30, y, 150, 35);
 
         doc.end();
 
@@ -743,6 +867,7 @@ app.get('/api/hr/application-form/:userId', async (req, res) => {
         res.status(500).send("PDF Generation Failed");
     }
 });
+
 
 app.get('/api/hr/pending-leaves', async (req, res) => {
     try {

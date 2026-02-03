@@ -33,6 +33,29 @@ model User {
   
   // New fields for Phase 2
   photo           String?   // Base64 storage
+  
+  // Financial Engine Fields
+  esicNumber      String?   // ESIC registration number
+  epfoNumber      String?   // EPFO/UAN number
+  esicEnabled     Boolean   @default(false)
+  epfoEnabled     Boolean   @default(true)
+  advanceAmount   Float     @default(0)  // Current advance amount
+  loanAmount      Float     @default(0)  // Current loan amount
+  tdsEnabled      Boolean   @default(false)
+  
+  // Application Form Fields
+  positionAppliedFor          String?
+  educationInstitution        String?
+  educationDegree             String?
+  educationYearCompleted      String?
+  previousCompany             String?
+  previousPosition            String?
+  previousEmploymentDates     String?
+  skillsQualifications        String?  // Text area content
+  referenceName               String?
+  referenceRelationship       String?
+  referencePhone              String?
+  applicantSignature          String?  // Can store signature image as base64 or text
 }
 
 model Company {
