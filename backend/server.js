@@ -1010,6 +1010,34 @@ app.get('/api/hr/application-form/:userId', async (req, res) => {
             doc.fontSize(10).fillColor(THEME_COLOR).font('Helvetica-Bold').text(title.toUpperCase(), 40, yPos + 6);
             return yPos + 30; // Return next Y position
         };
+        
+        const drawPhotoPlaceholder = (doc, x, y, width, height) => {
+            // Light background
+            doc.rect(x + 1, y + 1, width - 2, height - 2).fill('#F1F5F9');
+            
+            // Draw simple user icon (passport photo style)
+            const centerX = x + width / 2;
+            const centerY = y + height / 2 - 10;
+            
+            // Head circle (larger for passport size)
+            doc.circle(centerX, centerY, 18).fill('#94A3B8');
+            
+            // Body (shoulders) - adjusted for passport proportions
+            doc.moveTo(centerX - 25, y + height - 1)
+               .lineTo(centerX - 15, centerY + 22)
+               .quadraticCurveTo(centerX - 8, centerY + 18, centerX, centerY + 18)
+               .quadraticCurveTo(centerX + 8, centerY + 18, centerX + 15, centerY + 22)
+               .lineTo(centerX + 25, y + height - 1)
+               .fill('#94A3B8');
+            
+            // "No Photo" text at bottom
+            doc.fontSize(6).fillColor('#64748B').font('Helvetica').text(
+                'No Photo',
+                x,
+                y + height - 15,
+                { width: width, align: 'center' }
+            );
+        };
 
         // --- HEADER (Compact) ---
         doc.rect(0, 0, 595.28, 60).fill(THEME_COLOR);
@@ -1028,15 +1056,50 @@ app.get('/api/hr/application-form/:userId', async (req, res) => {
         // --- 2. PERSONAL INFORMATION ---
         y = drawSectionHeader('Personal Information', y);
         
-        // Row 1
-        drawField('Full Name', user.name, 'John Doe', 30, y, 260);
-        drawField('Address', user.address, '123 Tech Park, Silicon Valley, CA', 305, y, 260);
+        // Save photo position (passport size: ~35mm x 45mm = ~100x133 points)
+        const photoX = 445;
+        const photoY = y;
+        const photoWidth = 100;
+        const photoHeight = 133;
+        
+        // Row 1 - Adjusted width to make space for photo
+        drawField('Full Name', user.name, 'John Doe', 30, y, 395);
+        y += 45;
+        
+        // Row 2
+        drawField('Address', user.address, '123 Tech Park, Silicon Valley, CA', 30, y, 395);
         y += 45;
 
-        // Row 2
-        drawField('Phone Number', user.phone, '+1 (555) 123-4567', 30, y, 260);
-        drawField('Email Address', user.email, 'john.doe@example.com', 305, y, 260);
-        y += 55;
+        // Row 3
+        drawField('Phone Number', user.phone, '+1 (555) 123-4567', 30, y, 180);
+        drawField('Email Address', user.email, 'john.doe@example.com', 220, y, 215);
+        
+        // --- EMPLOYEE PHOTO (Passport Size) ---
+        // Draw photo border
+        doc.rect(photoX, photoY, photoWidth, photoHeight).strokeColor(BORDER_COLOR).stroke();
+        
+        if (user.photo) {
+            try {
+                // If photo exists, embed it (assuming base64 format)
+                const photoBuffer = Buffer.from(user.photo.replace(/^data:image\/\w+;base64,/, ''), 'base64');
+                // Use fit to maintain aspect ratio without stretching
+                doc.image(photoBuffer, photoX + 1, photoY + 1, {
+                    fit: [photoWidth - 2, photoHeight - 2],
+                    align: 'center',
+                    valign: 'center'
+                });
+            } catch (err) {
+                console.error('Error embedding photo:', err);
+                // Draw placeholder if image fails
+                drawPhotoPlaceholder(doc, photoX, photoY, photoWidth, photoHeight);
+            }
+        } else {
+            // Default SVG-style placeholder
+            drawPhotoPlaceholder(doc, photoX, photoY, photoWidth, photoHeight);
+        }
+        
+        // Move y position down to clear the photo
+        y += Math.max(45, photoHeight - 90) + 10;
 
         // --- 3. EDUCATION ---
         y = drawSectionHeader('Education', y);
