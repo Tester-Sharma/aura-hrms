@@ -1172,109 +1172,7 @@ app.post('/api/hr/attendance/manual', async (req, res) => {
     }
 });
 
-// HR: Download Attendance Sheet PDF
-app.post('/api/hr/attendance-sheet/pdf', async (req, res) => {
-    const { month } = req.body; // YYYY-MM
-    try {
-        const [year, monthNum] = month.split('-');
-        const startDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
-        const endDate = new Date(parseInt(year), parseInt(monthNum), 0);
-        const daysInMonth = endDate.getDate();
 
-        // Fetch Data
-        const employees = await prisma.user.findMany({ 
-            where: { role: { in: ['worker', 'employee'] } },
-            orderBy: { name: 'asc' } 
-        });
-
-        const attendance = await prisma.attendance.findMany({
-            where: {
-                date: {
-                    gte: startDate,
-                    lte: new Date(endDate.setHours(23,59,59))
-                }
-            }
-        });
-
-        const doc = new PDFDocument({ margin: 20, layout: 'landscape', size: 'A3' }); // A3 for width
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=Attendance_${month}.pdf`);
-        doc.pipe(res);
-
-        doc.fontSize(18).text(`Attendance Sheet - ${new Date(startDate).toLocaleString('default', { month: 'long', year: 'numeric' })}`, { align: 'center' });
-        doc.moveDown();
-
-        const startX = 20;
-        const startY = 80;
-        const cellWidth = 25;
-        const nameWidth = 150;
-        const rowHeight = 20;
-
-        // Draw Header
-        doc.fontSize(8);
-        doc.text('Employee', startX, startY + 5);
-        
-        for (let i = 1; i <= daysInMonth; i++) {
-            doc.text(i.toString(), startX + nameWidth + ((i-1) * cellWidth) + 8, startY + 5);
-        }
-        
-        // Grid Lines (Header)
-        doc.rect(startX, startY, nameWidth + (daysInMonth * cellWidth), rowHeight).stroke();
-        
-        // Draw Rows
-        let currentY = startY + rowHeight;
-        employees.forEach(emp => {
-            if (currentY > 750) { // New Page
-                doc.addPage({ margin: 20, layout: 'landscape', size: 'A3' });
-                currentY = 40;
-            }
-
-            doc.text(emp.name, startX + 5, currentY + 5, { width: nameWidth - 5, ellipsis: true });
-            
-            for (let i = 1; i <= daysInMonth; i++) {
-                const dayDate = new Date(year, monthNum - 1, i);
-                const record = attendance.find(a => 
-                    a.userId === emp.id && 
-                    new Date(a.date).getDate() === i
-                );
-
-                let mark = '-';
-                if (record) {
-                    if (record.status === 'Present') mark = 'P';
-                    else if (record.status === 'Absent') mark = 'A';
-                    else if (record.status === 'Leave') mark = 'L';
-                    else if (record.status === 'Half Day') mark = 'HD';
-                }
-
-                // Highlight Color
-                if (mark === 'A') doc.fillColor('red');
-                else if (mark === 'L') doc.fillColor('blue');
-                else doc.fillColor('black');
-
-                doc.text(mark, startX + nameWidth + ((i-1) * cellWidth) + 8, currentY + 5);
-                doc.fillColor('black'); // Reset
-            }
-            
-            // Row Border
-            doc.rect(startX, currentY, nameWidth + (daysInMonth * cellWidth), rowHeight).stroke();
-            currentY += rowHeight;
-        });
-
-        // Vertical Lines for Matrix
-        // Left Border (Name)
-        // doc.moveTo(startX + nameWidth, startY).lineTo(startX + nameWidth, currentY).stroke();
-        
-        for (let i = 0; i < daysInMonth; i++) {
-           // doc.moveTo(startX + nameWidth + (i * cellWidth), startY).lineTo(startX + nameWidth + (i * cellWidth), currentY).stroke();
-        }
-
-        doc.end();
-
-    } catch (e) {
-        console.error(e);
-        res.status(500).send("PDF Generation Failed");
-    }
-});
 
 app.post('/api/hr/update-leave-status', async (req, res) => {
     const { requestId, status } = req.body;
@@ -1337,166 +1235,7 @@ app.get('/api/hr/payroll-summary', async (req, res) => {
     }
 });
 
-// HR: Manual Attendance Entry
-app.post('/api/hr/attendance/manual', async (req, res) => {
-    const { userId, date, status, inTime, outTime } = req.body;
-    try {
-        const targetDate = new Date(date);
-        
-        // Find existing record for this user & date
-        // Note: Check date range to span that specific day
-        const startOfDay = new Date(targetDate); startOfDay.setHours(0,0,0,0);
-        const endOfDay = new Date(targetDate); endOfDay.setHours(23,59,59,999);
-        
-        const existing = await prisma.attendance.findFirst({
-            where: {
-                userId,
-                date: { gte: startOfDay, lte: endOfDay }
-            }
-        });
 
-        // Calculate hours if times are provided
-        let workedHours = 0;
-        let ot = 0;
-        let inDate = null;
-        let outDate = null;
-
-        if (inTime && outTime) {
-            inDate = new Date(`${date}T${inTime}`);
-            outDate = new Date(`${date}T${outTime}`);
-            const diff = outDate - inDate;
-            workedHours = parseFloat((diff / (1000 * 60 * 60)).toFixed(2));
-            if (workedHours > 9) ot = parseFloat((workedHours - 9).toFixed(2));
-        } else if (inTime) {
-            inDate = new Date(`${date}T${inTime}`);
-        }
-
-        const data = {
-            userId,
-            date: targetDate,
-            status,
-            inTime: inDate,
-            outTime: outDate,
-            workedHours,
-            otHours: ot
-        };
-
-        if (existing) {
-            await prisma.attendance.update({ where: { id: existing.id }, data });
-        } else {
-            await prisma.attendance.create({ data });
-        }
-
-        res.json({ success: true });
-    } catch (e) {
-        console.error(e);
-        res.status(500).send("Update Failed");
-    }
-});
-
-// HR: Download Attendance Sheet PDF
-app.post('/api/hr/attendance-sheet/pdf', async (req, res) => {
-    const { month } = req.body; // YYYY-MM
-    try {
-        const [year, monthNum] = month.split('-');
-        const startDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
-        const endDate = new Date(parseInt(year), parseInt(monthNum), 0);
-        const daysInMonth = endDate.getDate();
-
-        // Fetch Data
-        const employees = await prisma.user.findMany({ 
-            where: { role: { in: ['worker', 'employee'] } },
-            orderBy: { name: 'asc' } 
-        });
-
-        const attendance = await prisma.attendance.findMany({
-            where: {
-                date: {
-                    gte: startDate,
-                    lte: new Date(endDate.setHours(23,59,59))
-                }
-            }
-        });
-
-        const doc = new PDFDocument({ margin: 20, layout: 'landscape', size: 'A3' }); // A3 for width
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=Attendance_${month}.pdf`);
-        doc.pipe(res);
-
-        doc.fontSize(18).text(`Attendance Sheet - ${new Date(startDate).toLocaleString('default', { month: 'long', year: 'numeric' })}`, { align: 'center' });
-        doc.moveDown();
-
-        const startX = 20;
-        const startY = 80;
-        const cellWidth = 25;
-        const nameWidth = 150;
-        const rowHeight = 20;
-
-        // Draw Header
-        doc.fontSize(8);
-        doc.text('Employee', startX, startY + 5);
-        
-        for (let i = 1; i <= daysInMonth; i++) {
-            doc.text(i.toString(), startX + nameWidth + ((i-1) * cellWidth) + 8, startY + 5);
-        }
-        
-        // Grid Lines (Header)
-        doc.rect(startX, startY, nameWidth + (daysInMonth * cellWidth), rowHeight).stroke();
-        
-        // Draw Rows
-        let currentY = startY + rowHeight;
-        employees.forEach(emp => {
-            if (currentY > 750) { // New Page
-                doc.addPage({ margin: 20, layout: 'landscape', size: 'A3' });
-                currentY = 40;
-            }
-
-            doc.text(emp.name, startX + 5, currentY + 5, { width: nameWidth - 5, ellipsis: true });
-            
-            for (let i = 1; i <= daysInMonth; i++) {
-                const dayDate = new Date(year, monthNum - 1, i);
-                const record = attendance.find(a => 
-                    a.userId === emp.id && 
-                    new Date(a.date).getDate() === i
-                );
-
-                let mark = '-';
-                if (record) {
-                    if (record.status === 'Present') mark = 'P';
-                    else if (record.status === 'Absent') mark = 'A';
-                    else if (record.status === 'Leave') mark = 'L';
-                    else if (record.status === 'Half Day') mark = 'HD';
-                }
-
-                // Highlight Color
-                if (mark === 'A') doc.fillColor('red');
-                else if (mark === 'L') doc.fillColor('blue');
-                else doc.fillColor('black');
-
-                doc.text(mark, startX + nameWidth + ((i-1) * cellWidth) + 8, currentY + 5);
-                doc.fillColor('black'); // Reset
-            }
-            
-            // Row Border
-            doc.rect(startX, currentY, nameWidth + (daysInMonth * cellWidth), rowHeight).stroke();
-            currentY += rowHeight;
-        });
-
-        // Vertical Lines for Matrix
-        // Left Border (Name)
-        // doc.moveTo(startX + nameWidth, startY).lineTo(startX + nameWidth, currentY).stroke();
-        
-        for (let i = 0; i < daysInMonth; i++) {
-           // doc.moveTo(startX + nameWidth + (i * cellWidth), startY).lineTo(startX + nameWidth + (i * cellWidth), currentY).stroke();
-        }
-
-        doc.end();
-
-    } catch (e) {
-        console.error(e);
-        res.status(500).send("PDF Generation Failed");
-    }
-});
 
 // HR: Get today's attendance for all employees
 app.get('/api/hr/attendance-today', async (req, res) => {
@@ -1542,166 +1281,7 @@ app.get('/api/hr/attendance-today', async (req, res) => {
     }
 });
 
-// HR: Manual Attendance Entry
-app.post('/api/hr/attendance/manual', async (req, res) => {
-    const { userId, date, status, inTime, outTime } = req.body;
-    try {
-        const targetDate = new Date(date);
-        
-        // Find existing record for this user & date
-        // Note: Check date range to span that specific day
-        const startOfDay = new Date(targetDate); startOfDay.setHours(0,0,0,0);
-        const endOfDay = new Date(targetDate); endOfDay.setHours(23,59,59,999);
-        
-        const existing = await prisma.attendance.findFirst({
-            where: {
-                userId,
-                date: { gte: startOfDay, lte: endOfDay }
-            }
-        });
 
-        // Calculate hours if times are provided
-        let workedHours = 0;
-        let ot = 0;
-        let inDate = null;
-        let outDate = null;
-
-        if (inTime && outTime) {
-            inDate = new Date(`${date}T${inTime}`);
-            outDate = new Date(`${date}T${outTime}`);
-            const diff = outDate - inDate;
-            workedHours = parseFloat((diff / (1000 * 60 * 60)).toFixed(2));
-            if (workedHours > 9) ot = parseFloat((workedHours - 9).toFixed(2));
-        } else if (inTime) {
-            inDate = new Date(`${date}T${inTime}`);
-        }
-
-        const data = {
-            userId,
-            date: targetDate,
-            status,
-            inTime: inDate,
-            outTime: outDate,
-            workedHours,
-            otHours: ot
-        };
-
-        if (existing) {
-            await prisma.attendance.update({ where: { id: existing.id }, data });
-        } else {
-            await prisma.attendance.create({ data });
-        }
-
-        res.json({ success: true });
-    } catch (e) {
-        console.error(e);
-        res.status(500).send("Update Failed");
-    }
-});
-
-// HR: Download Attendance Sheet PDF
-app.post('/api/hr/attendance-sheet/pdf', async (req, res) => {
-    const { month } = req.body; // YYYY-MM
-    try {
-        const [year, monthNum] = month.split('-');
-        const startDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
-        const endDate = new Date(parseInt(year), parseInt(monthNum), 0);
-        const daysInMonth = endDate.getDate();
-
-        // Fetch Data
-        const employees = await prisma.user.findMany({ 
-            where: { role: { in: ['worker', 'employee'] } },
-            orderBy: { name: 'asc' } 
-        });
-
-        const attendance = await prisma.attendance.findMany({
-            where: {
-                date: {
-                    gte: startDate,
-                    lte: new Date(endDate.setHours(23,59,59))
-                }
-            }
-        });
-
-        const doc = new PDFDocument({ margin: 20, layout: 'landscape', size: 'A3' }); // A3 for width
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=Attendance_${month}.pdf`);
-        doc.pipe(res);
-
-        doc.fontSize(18).text(`Attendance Sheet - ${new Date(startDate).toLocaleString('default', { month: 'long', year: 'numeric' })}`, { align: 'center' });
-        doc.moveDown();
-
-        const startX = 20;
-        const startY = 80;
-        const cellWidth = 25;
-        const nameWidth = 150;
-        const rowHeight = 20;
-
-        // Draw Header
-        doc.fontSize(8);
-        doc.text('Employee', startX, startY + 5);
-        
-        for (let i = 1; i <= daysInMonth; i++) {
-            doc.text(i.toString(), startX + nameWidth + ((i-1) * cellWidth) + 8, startY + 5);
-        }
-        
-        // Grid Lines (Header)
-        doc.rect(startX, startY, nameWidth + (daysInMonth * cellWidth), rowHeight).stroke();
-        
-        // Draw Rows
-        let currentY = startY + rowHeight;
-        employees.forEach(emp => {
-            if (currentY > 750) { // New Page
-                doc.addPage({ margin: 20, layout: 'landscape', size: 'A3' });
-                currentY = 40;
-            }
-
-            doc.text(emp.name, startX + 5, currentY + 5, { width: nameWidth - 5, ellipsis: true });
-            
-            for (let i = 1; i <= daysInMonth; i++) {
-                const dayDate = new Date(year, monthNum - 1, i);
-                const record = attendance.find(a => 
-                    a.userId === emp.id && 
-                    new Date(a.date).getDate() === i
-                );
-
-                let mark = '-';
-                if (record) {
-                    if (record.status === 'Present') mark = 'P';
-                    else if (record.status === 'Absent') mark = 'A';
-                    else if (record.status === 'Leave') mark = 'L';
-                    else if (record.status === 'Half Day') mark = 'HD';
-                }
-
-                // Highlight Color
-                if (mark === 'A') doc.fillColor('red');
-                else if (mark === 'L') doc.fillColor('blue');
-                else doc.fillColor('black');
-
-                doc.text(mark, startX + nameWidth + ((i-1) * cellWidth) + 8, currentY + 5);
-                doc.fillColor('black'); // Reset
-            }
-            
-            // Row Border
-            doc.rect(startX, currentY, nameWidth + (daysInMonth * cellWidth), rowHeight).stroke();
-            currentY += rowHeight;
-        });
-
-        // Vertical Lines for Matrix
-        // Left Border (Name)
-        // doc.moveTo(startX + nameWidth, startY).lineTo(startX + nameWidth, currentY).stroke();
-        
-        for (let i = 0; i < daysInMonth; i++) {
-           // doc.moveTo(startX + nameWidth + (i * cellWidth), startY).lineTo(startX + nameWidth + (i * cellWidth), currentY).stroke();
-        }
-
-        doc.end();
-
-    } catch (e) {
-        console.error(e);
-        res.status(500).send("PDF Generation Failed");
-    }
-});
 
 // HR: Get attendance history for specific employee
 app.get('/api/hr/attendance-history/:userId', async (req, res) => {
@@ -1758,62 +1338,7 @@ app.get('/api/hr/attendance-history/:userId', async (req, res) => {
     }
 });
 
-// HR: Manual Attendance Entry
-app.post('/api/hr/attendance/manual', async (req, res) => {
-    const { userId, date, status, inTime, outTime } = req.body;
-    try {
-        const targetDate = new Date(date);
-        
-        // Find existing record for this user & date
-        // Note: Check date range to span that specific day
-        const startOfDay = new Date(targetDate); startOfDay.setHours(0,0,0,0);
-        const endOfDay = new Date(targetDate); endOfDay.setHours(23,59,59,999);
-        
-        const existing = await prisma.attendance.findFirst({
-            where: {
-                userId,
-                date: { gte: startOfDay, lte: endOfDay }
-            }
-        });
 
-        // Calculate hours if times are provided
-        let workedHours = 0;
-        let ot = 0;
-        let inDate = null;
-        let outDate = null;
-
-        if (inTime && outTime) {
-            inDate = new Date(`${date}T${inTime}`);
-            outDate = new Date(`${date}T${outTime}`);
-            const diff = outDate - inDate;
-            workedHours = parseFloat((diff / (1000 * 60 * 60)).toFixed(2));
-            if (workedHours > 9) ot = parseFloat((workedHours - 9).toFixed(2));
-        } else if (inTime) {
-            inDate = new Date(`${date}T${inTime}`);
-        }
-
-        const data = {
-            userId,
-            date: targetDate,
-            status,
-            inTime: inDate,
-            outTime: outDate,
-            workedHours,
-            otHours: ot
-        };
-
-        if (existing) {
-            await prisma.attendance.update({ where: { id: existing.id }, data });
-        } else {
-            await prisma.attendance.create({ data });
-        }
-
-        res.json({ success: true });
-    } catch (e) {
-        console.error(e);
-        res.status(500).send("Update Failed");
-    }
-});
 
 // HR: Download Attendance Sheet PDF
 app.post('/api/hr/attendance-sheet/pdf', async (req, res) => {
@@ -1823,6 +1348,8 @@ app.post('/api/hr/attendance-sheet/pdf', async (req, res) => {
         const startDate = new Date(parseInt(year), parseInt(monthNum) - 1, 1);
         const endDate = new Date(parseInt(year), parseInt(monthNum), 0);
         const daysInMonth = endDate.getDate();
+        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const monthName = monthNames[parseInt(monthNum) - 1];
 
         // Fetch Data
         const employees = await prisma.user.findMany({ 
@@ -1839,77 +1366,203 @@ app.post('/api/hr/attendance-sheet/pdf', async (req, res) => {
             }
         });
 
-        const doc = new PDFDocument({ margin: 20, layout: 'landscape', size: 'A3' }); // A3 for width
+        const company = await prisma.company.findFirst();
+
+        // Use A3 for more columns
+        const doc = new PDFDocument({ margin: 15, layout: 'landscape', size: 'A3' });
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename=Attendance_${month}.pdf`);
         doc.pipe(res);
 
-        doc.fontSize(18).text(`Attendance Sheet - ${new Date(startDate).toLocaleString('default', { month: 'long', year: 'numeric' })}`, { align: 'center' });
-        doc.moveDown();
+        // --- CONSTANTS ---
+        const THEME_COLOR = '#6200EA';
+        const HEADER_BG = '#f3e8ff';
+        const BORDER_COLOR = '#CBD5E1';
+        const startX = 15;
+        let y = 15;
 
-        const startX = 20;
-        const startY = 80;
-        const cellWidth = 25;
-        const nameWidth = 150;
-        const rowHeight = 20;
-
-        // Draw Header
-        doc.fontSize(8);
-        doc.text('Employee', startX, startY + 5);
+        // --- HEADER ---
+        doc.fontSize(7).font('Helvetica').fillColor('black');
+        doc.text(`[Form - Attendance Register]`, startX, y);
+        doc.text(`Page 1`, 1150, y, { width: 40, align: 'right' });
         
-        for (let i = 1; i <= daysInMonth; i++) {
-            doc.text(i.toString(), startX + nameWidth + ((i-1) * cellWidth) + 8, startY + 5);
+        y += 12;
+        doc.fontSize(14).font('Helvetica-Bold').fillColor(THEME_COLOR);
+        doc.text(`${company?.name || 'AURA TEXTILES PRIVATE LIMITED'}`, startX, y, { width: 1180, align: 'center' });
+        
+        y += 18;
+        doc.fontSize(7).font('Helvetica').fillColor('black');
+        doc.text(`${company?.address || 'PLOT NO. XXX, INDUSTRIAL AREA, GROWTH CENTRE, DISTRICT'}`, startX, y, { width: 1180, align: 'center' });
+        
+        y += 15;
+        doc.fontSize(10).font('Helvetica-Bold').fillColor('black');
+        doc.text(`ATTENDANCE SHEET - ${monthName.toUpperCase()} ${year}`, startX, y, { width: 1180, align: 'center' });
+
+        y += 25;
+
+        // --- COLUMN DEFINITIONS ---
+        const fixedCols = [
+            { name: 'Emp ID', w: 55 },
+            { name: 'Emp Name', w: 100 },
+            { name: 'Department', w: 70 },
+            { name: 'Designation', w: 70 },
+            { name: 'Type', w: 50 }
+        ];
+        
+        const dayCellWidth = 22;
+        const summaryColWidth = 45;
+        
+        // Calculate total fixed width
+        const fixedWidth = fixedCols.reduce((s, c) => s + c.w, 0);
+        const daysWidth = daysInMonth * dayCellWidth;
+        const totalWidth = fixedWidth + daysWidth + (summaryColWidth * 2);
+
+        // --- HEADER ROW ---
+        const headerHeight = 30;
+        doc.rect(startX, y, totalWidth, headerHeight).fillAndStroke(HEADER_BG, BORDER_COLOR);
+        
+        // Draw fixed column headers
+        let x = startX;
+        doc.fontSize(6).font('Helvetica-Bold').fillColor('black');
+        fixedCols.forEach(col => {
+            doc.text(col.name.toUpperCase(), x + 2, y + 10, { width: col.w - 4, align: 'center' });
+            // Vertical line
+            doc.moveTo(x + col.w, y).lineTo(x + col.w, y + headerHeight).strokeColor(BORDER_COLOR).stroke();
+            x += col.w;
+        });
+        
+        // Draw day headers (D1, D2, D3... Dn)
+        for (let d = 1; d <= daysInMonth; d++) {
+            doc.text(d.toString(), x + 2, y + 10, { width: dayCellWidth - 4, align: 'center' });
+            doc.moveTo(x + dayCellWidth, y).lineTo(x + dayCellWidth, y + headerHeight).strokeColor(BORDER_COLOR).stroke();
+            x += dayCellWidth;
         }
         
-        // Grid Lines (Header)
-        doc.rect(startX, startY, nameWidth + (daysInMonth * cellWidth), rowHeight).stroke();
+        // Summary columns
+        doc.text('TOTAL HRS', x + 2, y + 8, { width: summaryColWidth - 4, align: 'center' });
+        doc.moveTo(x + summaryColWidth, y).lineTo(x + summaryColWidth, y + headerHeight).strokeColor(BORDER_COLOR).stroke();
+        x += summaryColWidth;
         
-        // Draw Rows
-        let currentY = startY + rowHeight;
-        employees.forEach(emp => {
-            if (currentY > 750) { // New Page
-                doc.addPage({ margin: 20, layout: 'landscape', size: 'A3' });
-                currentY = 40;
+        doc.text('WORKING DAYS', x + 2, y + 5, { width: summaryColWidth - 4, align: 'center' });
+        
+        y += headerHeight;
+
+        // --- DATA ROWS ---
+        const rowHeight = 22;
+        doc.font('Helvetica').fontSize(6);
+
+        employees.forEach((emp, idx) => {
+            // New page check
+            if (y > 780) {
+                doc.addPage({ margin: 15, layout: 'landscape', size: 'A3' });
+                y = 30;
+                
+                // Redraw header on new page
+                doc.rect(startX, y, totalWidth, headerHeight).fillAndStroke(HEADER_BG, BORDER_COLOR);
+                let hx = startX;
+                doc.fontSize(6).font('Helvetica-Bold').fillColor('black');
+                fixedCols.forEach(col => {
+                    doc.text(col.name.toUpperCase(), hx + 2, y + 10, { width: col.w - 4, align: 'center' });
+                    doc.moveTo(hx + col.w, y).lineTo(hx + col.w, y + headerHeight).strokeColor(BORDER_COLOR).stroke();
+                    hx += col.w;
+                });
+                for (let d = 1; d <= daysInMonth; d++) {
+                    doc.text(d.toString(), hx + 2, y + 10, { width: dayCellWidth - 4, align: 'center' });
+                    doc.moveTo(hx + dayCellWidth, y).lineTo(hx + dayCellWidth, y + headerHeight).strokeColor(BORDER_COLOR).stroke();
+                    hx += dayCellWidth;
+                }
+                doc.text('TOTAL HRS', hx + 2, y + 8, { width: summaryColWidth - 4, align: 'center' });
+                doc.moveTo(hx + summaryColWidth, y).lineTo(hx + summaryColWidth, y + headerHeight).strokeColor(BORDER_COLOR).stroke();
+                hx += summaryColWidth;
+                doc.text('WORKING DAYS', hx + 2, y + 5, { width: summaryColWidth - 4, align: 'center' });
+                y += headerHeight;
+                doc.font('Helvetica').fontSize(6);
             }
 
-            doc.text(emp.name, startX + 5, currentY + 5, { width: nameWidth - 5, ellipsis: true });
+            // Alternating row background
+            if (idx % 2 === 0) {
+                doc.rect(startX, y, totalWidth, rowHeight).fill('#fafafa');
+            }
             
-            for (let i = 1; i <= daysInMonth; i++) {
-                const dayDate = new Date(year, monthNum - 1, i);
+            // Draw row border
+            doc.rect(startX, y, totalWidth, rowHeight).strokeColor(BORDER_COLOR).stroke();
+
+            let cx = startX;
+            doc.fillColor('black');
+
+            // Emp ID
+            doc.font('Helvetica-Bold').text(emp.id, cx + 2, y + 7, { width: fixedCols[0].w - 4, align: 'center' });
+            doc.moveTo(cx + fixedCols[0].w, y).lineTo(cx + fixedCols[0].w, y + rowHeight).strokeColor(BORDER_COLOR).stroke();
+            cx += fixedCols[0].w;
+
+            // Emp Name
+            doc.font('Helvetica').text(emp.name?.toUpperCase() || '-', cx + 2, y + 7, { width: fixedCols[1].w - 4, ellipsis: true });
+            doc.moveTo(cx + fixedCols[1].w, y).lineTo(cx + fixedCols[1].w, y + rowHeight).strokeColor(BORDER_COLOR).stroke();
+            cx += fixedCols[1].w;
+
+            // Department
+            doc.text(emp.department || '-', cx + 2, y + 7, { width: fixedCols[2].w - 4, align: 'center' });
+            doc.moveTo(cx + fixedCols[2].w, y).lineTo(cx + fixedCols[2].w, y + rowHeight).strokeColor(BORDER_COLOR).stroke();
+            cx += fixedCols[2].w;
+
+            // Designation
+            doc.text(emp.designation || '-', cx + 2, y + 7, { width: fixedCols[3].w - 4, align: 'center' });
+            doc.moveTo(cx + fixedCols[3].w, y).lineTo(cx + fixedCols[3].w, y + rowHeight).strokeColor(BORDER_COLOR).stroke();
+            cx += fixedCols[3].w;
+
+            // Type (Worker/Employee)
+            doc.text(emp.role === 'worker' ? 'Worker' : 'Employee', cx + 2, y + 7, { width: fixedCols[4].w - 4, align: 'center' });
+            doc.moveTo(cx + fixedCols[4].w, y).lineTo(cx + fixedCols[4].w, y + rowHeight).strokeColor(BORDER_COLOR).stroke();
+            cx += fixedCols[4].w;
+
+            // Day columns (D1-Dn) - show hours worked or "A"
+            let totalHours = 0;
+            let workingDays = 0;
+            
+            for (let d = 1; d <= daysInMonth; d++) {
                 const record = attendance.find(a => 
                     a.userId === emp.id && 
-                    new Date(a.date).getDate() === i
+                    new Date(a.date).getDate() === d
                 );
 
-                let mark = '-';
+                let cellValue = 'A'; // Default: Absent
+                let cellColor = '#ef4444'; // Red for absent
+
                 if (record) {
-                    if (record.status === 'Present') mark = 'P';
-                    else if (record.status === 'Absent') mark = 'A';
-                    else if (record.status === 'Leave') mark = 'L';
-                    else if (record.status === 'Half Day') mark = 'HD';
+                    if (record.status === 'Present' || record.status === 'Half Day') {
+                        const hours = record.workedHours || 0;
+                        cellValue = hours > 0 ? hours.toFixed(1) : 'P';
+                        cellColor = '#16a34a'; // Green for present
+                        totalHours += hours;
+                        workingDays += record.status === 'Half Day' ? 0.5 : 1;
+                    } else if (record.status === 'Leave') {
+                        cellValue = 'L';
+                        cellColor = '#2563eb'; // Blue for leave
+                    }
                 }
 
-                // Highlight Color
-                if (mark === 'A') doc.fillColor('red');
-                else if (mark === 'L') doc.fillColor('blue');
-                else doc.fillColor('black');
-
-                doc.text(mark, startX + nameWidth + ((i-1) * cellWidth) + 8, currentY + 5);
-                doc.fillColor('black'); // Reset
+                doc.fillColor(cellColor).text(cellValue, cx + 1, y + 7, { width: dayCellWidth - 2, align: 'center' });
+                doc.moveTo(cx + dayCellWidth, y).lineTo(cx + dayCellWidth, y + rowHeight).strokeColor(BORDER_COLOR).stroke();
+                cx += dayCellWidth;
             }
-            
-            // Row Border
-            doc.rect(startX, currentY, nameWidth + (daysInMonth * cellWidth), rowHeight).stroke();
-            currentY += rowHeight;
+
+            // Total Hours
+            doc.fillColor(THEME_COLOR).font('Helvetica-Bold');
+            doc.text(totalHours.toFixed(1), cx + 2, y + 7, { width: summaryColWidth - 4, align: 'center' });
+            doc.moveTo(cx + summaryColWidth, y).lineTo(cx + summaryColWidth, y + rowHeight).strokeColor(BORDER_COLOR).stroke();
+            cx += summaryColWidth;
+
+            // Working Days
+            doc.text(workingDays.toString(), cx + 2, y + 7, { width: summaryColWidth - 4, align: 'center' });
+
+            doc.font('Helvetica').fillColor('black');
+            y += rowHeight;
         });
 
-        // Vertical Lines for Matrix
-        // Left Border (Name)
-        // doc.moveTo(startX + nameWidth, startY).lineTo(startX + nameWidth, currentY).stroke();
-        
-        for (let i = 0; i < daysInMonth; i++) {
-           // doc.moveTo(startX + nameWidth + (i * cellWidth), startY).lineTo(startX + nameWidth + (i * cellWidth), currentY).stroke();
-        }
+        // Footer
+        y += 15;
+        doc.fontSize(7).font('Helvetica-Oblique').fillColor('#64748B');
+        doc.text('This is a system generated attendance sheet.', startX, y, { width: totalWidth, align: 'center' });
 
         doc.end();
 
@@ -1918,6 +1571,7 @@ app.post('/api/hr/attendance-sheet/pdf', async (req, res) => {
         res.status(500).send("PDF Generation Failed");
     }
 });
+
 
 // --- COMPANY MANAGEMENT ---
 
@@ -1975,3 +1629,4 @@ app.post('/api/company', async (req, res) => {
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
+``
